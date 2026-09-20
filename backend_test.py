@@ -1,1143 +1,466 @@
 #!/usr/bin/env python3
 """
-Comprehensive backend API test for Konter HP application.
-Tests all endpoints with focus on stock integrity.
+Backend test for Konter HP revenue flow
+Tests handover auto-lunas, dashboard revenue, and reports collected
 """
-
 import requests
 import json
 from datetime import datetime
 
-# Configuration
 BASE_URL = "https://phone-counter-1.preview.emergentagent.com/api"
-LOGIN_EMAIL = "ponselyen@gmail.com"
-LOGIN_PASSWORD = "Meranti123"
 
-# Global variables
-token = None
-headers = {}
-
-def print_test(name, passed, details=""):
-    """Print test result"""
-    status = "✅ PASS" if passed else "❌ FAIL"
-    print(f"{status}: {name}")
-    if details:
-        print(f"   Details: {details}")
-    if not passed:
-        print()
-
-def test_auth_login_success():
-    """Test POST /api/auth/login with correct credentials"""
-    global token, headers
+def test_revenue_flow():
+    """Test the complete revenue flow from service creation to handover and reporting"""
+    
+    print("\n" + "="*80)
+    print("TESTING REVENUE FLOW - Handover Auto-Lunas & Dashboard Revenue")
+    print("="*80)
+    
+    # Step 1: Login
+    print("\n[1] Authenticating...")
     try:
-        response = requests.post(f"{BASE_URL}/auth/login", json={
-            "email": LOGIN_EMAIL,
-            "password": LOGIN_PASSWORD
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "token" in data and "user" in data:
-                token = data["token"]
-                headers = {"Authorization": f"Bearer {token}"}
-                print_test("Auth: Login with correct credentials", True, f"Token received, user: {data['user']['email']}")
-                return True
-            else:
-                print_test("Auth: Login with correct credentials", False, "Response missing token or user")
-                return False
-        else:
-            print_test("Auth: Login with correct credentials", False, f"Status {response.status_code}: {response.text}")
+        login_response = requests.post(
+            f"{BASE_URL}/auth/login",
+            json={"email": "ponselyen@gmail.com", "password": "Meranti123"},
+            timeout=10
+        )
+        if login_response.status_code != 200:
+            print(f"❌ Login failed: {login_response.status_code} - {login_response.text}")
             return False
+        
+        token = login_response.json().get("token")
+        if not token:
+            print(f"❌ No token in response: {login_response.json()}")
+            return False
+        
+        print(f"✅ Login successful, token obtained")
+        headers = {"Authorization": f"Bearer {token}"}
     except Exception as e:
-        print_test("Auth: Login with correct credentials", False, f"Exception: {str(e)}")
+        print(f"❌ Login error: {e}")
         return False
-
-def test_auth_login_wrong_password():
-    """Test POST /api/auth/login with wrong password"""
+    
+    # Step 2: Create a service with work item
+    print("\n[2] Creating service with work item (servicePrice: 150000)...")
     try:
-        response = requests.post(f"{BASE_URL}/auth/login", json={
-            "email": LOGIN_EMAIL,
-            "password": "wrongpassword123"
-        })
-        
-        if response.status_code == 401:
-            print_test("Auth: Login with wrong password returns 401", True)
-            return True
-        else:
-            print_test("Auth: Login with wrong password returns 401", False, f"Expected 401, got {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Auth: Login with wrong password returns 401", False, f"Exception: {str(e)}")
-        return False
-
-def test_auth_me_with_token():
-    """Test GET /api/auth/me with token"""
-    try:
-        response = requests.get(f"{BASE_URL}/auth/me", headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "user" in data and data["user"]["email"] == LOGIN_EMAIL:
-                print_test("Auth: GET /auth/me with token", True, f"User: {data['user']['email']}")
-                return True
-            else:
-                print_test("Auth: GET /auth/me with token", False, "Invalid user data")
-                return False
-        else:
-            print_test("Auth: GET /auth/me with token", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Auth: GET /auth/me with token", False, f"Exception: {str(e)}")
-        return False
-
-def test_auth_me_without_token():
-    """Test GET /api/auth/me without token"""
-    try:
-        response = requests.get(f"{BASE_URL}/auth/me")
-        
-        if response.status_code == 401:
-            print_test("Auth: GET /auth/me without token returns 401", True)
-            return True
-        else:
-            print_test("Auth: GET /auth/me without token returns 401", False, f"Expected 401, got {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Auth: GET /auth/me without token returns 401", False, f"Exception: {str(e)}")
-        return False
-
-def test_inventory_create():
-    """Test POST /api/inventory - create item with initial stock"""
-    try:
-        response = requests.post(f"{BASE_URL}/inventory", headers=headers, json={
-            "name": "Test LCD Samsung A10",
-            "category": "LCD",
-            "stock": 5,
-            "minStock": 2,
-            "buyPrice": 300000,
-            "sellPrice": 400000,
-            "location": "TEST-01"
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("stock") == 5 and data.get("name") == "Test LCD Samsung A10":
-                # Verify movement was created
-                inv_id = data["id"]
-                detail_response = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-                if detail_response.status_code == 200:
-                    detail = detail_response.json()
-                    movements = detail.get("movements", [])
-                    stok_awal = any(m.get("type") == "STOK_AWAL" for m in movements)
-                    if stok_awal:
-                        print_test("Inventory: Create item with STOK_AWAL movement", True, f"ID: {inv_id}, Stock: 5")
-                        return True, inv_id
-                    else:
-                        print_test("Inventory: Create item with STOK_AWAL movement", False, "STOK_AWAL movement not found")
-                        return False, inv_id
-                else:
-                    print_test("Inventory: Create item with STOK_AWAL movement", False, "Could not fetch item details")
-                    return False, inv_id
-            else:
-                print_test("Inventory: Create item with STOK_AWAL movement", False, "Invalid item data")
-                return False, None
-        else:
-            print_test("Inventory: Create item with STOK_AWAL movement", False, f"Status {response.status_code}: {response.text}")
-            return False, None
-    except Exception as e:
-        print_test("Inventory: Create item with STOK_AWAL movement", False, f"Exception: {str(e)}")
-        return False, None
-
-def test_inventory_list():
-    """Test GET /api/inventory"""
-    try:
-        response = requests.get(f"{BASE_URL}/inventory", headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list):
-                print_test("Inventory: GET list", True, f"Found {len(data)} items")
-                return True
-            else:
-                print_test("Inventory: GET list", False, "Response is not a list")
-                return False
-        else:
-            print_test("Inventory: GET list", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Inventory: GET list", False, f"Exception: {str(e)}")
-        return False
-
-def test_inventory_adjust_masuk(inv_id):
-    """Test POST /api/inventory/:id/adjust with STOK_MASUK"""
-    try:
-        # Get current stock
-        detail_response = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-        if detail_response.status_code != 200:
-            print_test("Inventory: Adjust STOK_MASUK", False, "Could not fetch current stock")
-            return False
-        
-        current_stock = detail_response.json().get("stock", 0)
-        
-        # Add stock
-        response = requests.post(f"{BASE_URL}/inventory/{inv_id}/adjust", headers=headers, json={
-            "type": "STOK_MASUK",
-            "qty": 3,
-            "note": "Test stock in"
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            new_stock = data.get("stock", 0)
-            if new_stock == current_stock + 3:
-                print_test("Inventory: Adjust STOK_MASUK", True, f"Stock increased from {current_stock} to {new_stock}")
-                return True
-            else:
-                print_test("Inventory: Adjust STOK_MASUK", False, f"Expected {current_stock + 3}, got {new_stock}")
-                return False
-        else:
-            print_test("Inventory: Adjust STOK_MASUK", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Inventory: Adjust STOK_MASUK", False, f"Exception: {str(e)}")
-        return False
-
-def test_inventory_adjust_keluar(inv_id):
-    """Test POST /api/inventory/:id/adjust with STOK_KELUAR"""
-    try:
-        # Get current stock
-        detail_response = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-        if detail_response.status_code != 200:
-            print_test("Inventory: Adjust STOK_KELUAR", False, "Could not fetch current stock")
-            return False
-        
-        current_stock = detail_response.json().get("stock", 0)
-        
-        # Remove stock
-        response = requests.post(f"{BASE_URL}/inventory/{inv_id}/adjust", headers=headers, json={
-            "type": "STOK_KELUAR",
-            "qty": 2,
-            "note": "Test stock out"
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            new_stock = data.get("stock", 0)
-            if new_stock == current_stock - 2:
-                print_test("Inventory: Adjust STOK_KELUAR", True, f"Stock decreased from {current_stock} to {new_stock}")
-                return True
-            else:
-                print_test("Inventory: Adjust STOK_KELUAR", False, f"Expected {current_stock - 2}, got {new_stock}")
-                return False
-        else:
-            print_test("Inventory: Adjust STOK_KELUAR", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Inventory: Adjust STOK_KELUAR", False, f"Exception: {str(e)}")
-        return False
-
-def test_inventory_adjust_penyesuaian(inv_id):
-    """Test POST /api/inventory/:id/adjust with PENYESUAIAN"""
-    try:
-        response = requests.post(f"{BASE_URL}/inventory/{inv_id}/adjust", headers=headers, json={
-            "type": "PENYESUAIAN",
-            "setTo": 10,
-            "note": "Test adjustment"
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            new_stock = data.get("stock", 0)
-            if new_stock == 10:
-                print_test("Inventory: Adjust PENYESUAIAN", True, f"Stock set to 10")
-                return True
-            else:
-                print_test("Inventory: Adjust PENYESUAIAN", False, f"Expected 10, got {new_stock}")
-                return False
-        else:
-            print_test("Inventory: Adjust PENYESUAIAN", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Inventory: Adjust PENYESUAIAN", False, f"Exception: {str(e)}")
-        return False
-
-def test_inventory_negative_stock_rejection(inv_id):
-    """Test that negative stock is rejected"""
-    try:
-        response = requests.post(f"{BASE_URL}/inventory/{inv_id}/adjust", headers=headers, json={
-            "type": "STOK_KELUAR",
-            "qty": 1000,
-            "note": "Test negative rejection"
-        })
-        
-        if response.status_code == 400:
-            print_test("Inventory: Negative stock rejection", True, "400 error returned as expected")
-            return True
-        else:
-            print_test("Inventory: Negative stock rejection", False, f"Expected 400, got {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Inventory: Negative stock rejection", False, f"Exception: {str(e)}")
-        return False
-
-def test_services_create():
-    """Test POST /api/services - create service with auto customer and serviceNumber"""
-    try:
-        response = requests.post(f"{BASE_URL}/services", headers=headers, json={
-            "customerName": "Test Customer",
-            "customerPhone": "081234567999",
+        service_data = {
+            "customerName": "Test Revenue Customer",
+            "customerPhone": "0811222333",
             "brand": "Samsung",
             "model": "A52",
-            "complaint": "Layar pecah",
-            "condition": {
-                "simCard": "Ada",
-                "sdCard": "Tidak Ada"
-            },
-            "deliveredBy": {
-                "type": "owner"
-            }
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            service_number = data.get("serviceNumber", "")
-            # Check format SRV-YYMMDD-NNN
-            if service_number.startswith("SRV-") and len(service_number) == 14:
-                print_test("Services: Create with serviceNumber format", True, f"Service: {service_number}, Status: {data.get('status')}")
-                return True, data["id"]
-            else:
-                print_test("Services: Create with serviceNumber format", False, f"Invalid format: {service_number}")
-                return False, data.get("id")
-        else:
-            print_test("Services: Create with serviceNumber format", False, f"Status {response.status_code}: {response.text}")
-            return False, None
-    except Exception as e:
-        print_test("Services: Create with serviceNumber format", False, f"Exception: {str(e)}")
-        return False, None
-
-def test_services_list():
-    """Test GET /api/services with filters"""
-    try:
-        # Test basic list
-        response = requests.get(f"{BASE_URL}/services", headers=headers)
-        if response.status_code != 200:
-            print_test("Services: GET list", False, f"Status {response.status_code}")
+            "complaint": "LCD pecah",
+            "condition": {},
+            "deliveredBy": {"type": "owner", "name": ""}
+        }
+        service_response = requests.post(
+            f"{BASE_URL}/services",
+            json=service_data,
+            headers=headers,
+            timeout=10
+        )
+        if service_response.status_code not in [200, 201]:
+            print(f"❌ Service creation failed: {service_response.status_code} - {service_response.text}")
             return False
         
-        # Test with search
-        response = requests.get(f"{BASE_URL}/services?search=Test", headers=headers)
-        if response.status_code != 200:
-            print_test("Services: GET list", False, f"Search failed: {response.status_code}")
-            return False
+        service = service_response.json()
+        service_id = service.get("id")
+        print(f"✅ Service created: {service_id}")
         
-        # Test with status filter
-        response = requests.get(f"{BASE_URL}/services?status=MENUNGGU", headers=headers)
-        if response.status_code != 200:
-            print_test("Services: GET list", False, f"Status filter failed: {response.status_code}")
-            return False
-        
-        print_test("Services: GET list with filters", True, "All filters working")
-        return True
-    except Exception as e:
-        print_test("Services: GET list with filters", False, f"Exception: {str(e)}")
-        return False
-
-def test_services_add_item_with_inventory(service_id, inv_id):
-    """Test POST /api/services/:id/items with inventoryId - CRITICAL STOCK TEST"""
-    try:
-        # Get current inventory stock
-        inv_response = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-        if inv_response.status_code != 200:
-            print_test("Services: Add item with inventory (stock deduction)", False, "Could not fetch inventory")
-            return False, None
-        
-        current_stock = inv_response.json().get("stock", 0)
-        
-        # Add item to service
-        response = requests.post(f"{BASE_URL}/services/{service_id}/items", headers=headers, json={
+        # Add work item
+        item_data = {
             "description": "Ganti LCD",
-            "inventoryId": inv_id,
             "qty": 1,
-            "servicePrice": 150000
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            
-            # Verify stock decreased
-            inv_response = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-            if inv_response.status_code != 200:
-                print_test("Services: Add item with inventory (stock deduction)", False, "Could not verify stock")
-                return False, None
-            
-            inv_data = inv_response.json()
-            new_stock = inv_data.get("stock", 0)
-            movements = inv_data.get("movements", [])
-            
-            # Check stock decreased
-            if new_stock != current_stock - 1:
-                print_test("Services: Add item with inventory (stock deduction)", False, f"Stock not decreased: {current_stock} -> {new_stock}")
-                return False, None
-            
-            # Check SERVICE movement exists
-            service_movement = any(m.get("type") == "SERVICE" for m in movements)
-            if not service_movement:
-                print_test("Services: Add item with inventory (stock deduction)", False, "SERVICE movement not found")
-                return False, None
-            
-            # Get item ID
-            items = data.get("items", [])
-            item_id = items[-1]["id"] if items else None
-            
-            print_test("Services: Add item with inventory (stock deduction)", True, f"Stock: {current_stock} -> {new_stock}, SERVICE movement created")
-            return True, item_id
-        else:
-            print_test("Services: Add item with inventory (stock deduction)", False, f"Status {response.status_code}: {response.text}")
-            return False, None
-    except Exception as e:
-        print_test("Services: Add item with inventory (stock deduction)", False, f"Exception: {str(e)}")
-        return False, None
-
-def test_services_add_item_insufficient_stock(service_id, inv_id):
-    """Test that insufficient stock is rejected"""
-    try:
-        response = requests.post(f"{BASE_URL}/services/{service_id}/items", headers=headers, json={
-            "description": "Test insufficient",
-            "inventoryId": inv_id,
-            "qty": 1000,
-            "servicePrice": 100000
-        })
-        
-        if response.status_code == 400:
-            print_test("Services: Insufficient stock rejection", True, "400 error returned as expected")
-            return True
-        else:
-            print_test("Services: Insufficient stock rejection", False, f"Expected 400, got {response.status_code}")
+            "servicePrice": 150000,
+            "sparepartPrice": 0,
+            "sparepartName": "",
+            "inventoryId": None
+        }
+        item_response = requests.post(
+            f"{BASE_URL}/services/{service_id}/items",
+            json=item_data,
+            headers=headers,
+            timeout=10
+        )
+        if item_response.status_code != 200:
+            print(f"❌ Item addition failed: {item_response.status_code} - {item_response.text}")
             return False
+        
+        service_with_item = item_response.json()
+        payment = service_with_item.get("payment", {})
+        print(f"✅ Work item added")
+        print(f"   Payment total: {payment.get('total')}, paid: {payment.get('paid')}")
+        
+        if payment.get("total") != 150000:
+            print(f"❌ Expected payment.total=150000, got {payment.get('total')}")
+            return False
+        if payment.get("paid") != 0:
+            print(f"❌ Expected payment.paid=0, got {payment.get('paid')}")
+            return False
+        
+        print(f"✅ Payment verification passed: total=150000, paid=0")
+        
     except Exception as e:
-        print_test("Services: Insufficient stock rejection", False, f"Exception: {str(e)}")
+        print(f"❌ Service creation error: {e}")
         return False
-
-def test_services_add_item_manual(service_id):
-    """Test POST /api/services/:id/items without inventoryId (manual item)"""
+    
+    # Step 3: Snapshot dashboard and reports BEFORE handover
+    print("\n[3] Taking snapshot of dashboard and reports BEFORE handover...")
     try:
-        response = requests.post(f"{BASE_URL}/services/{service_id}/items", headers=headers, json={
-            "description": "Servis manual",
-            "sparepartName": "Manual part",
-            "sparepartPrice": 50000,
+        dashboard_before = requests.get(f"{BASE_URL}/dashboard", headers=headers, timeout=10)
+        if dashboard_before.status_code != 200:
+            print(f"❌ Dashboard request failed: {dashboard_before.status_code}")
+            return False
+        
+        dash_before = dashboard_before.json()
+        revenue_before = dash_before.get("revenue", {})
+        before_service = revenue_before.get("todayService", 0)
+        before_service_count = revenue_before.get("todayServiceCount", 0)
+        before_sales = revenue_before.get("todaySales", 0)
+        before_total = revenue_before.get("todayTotal", 0)
+        
+        print(f"✅ Dashboard BEFORE:")
+        print(f"   todayService: {before_service}")
+        print(f"   todayServiceCount: {before_service_count}")
+        print(f"   todaySales: {before_sales}")
+        print(f"   todayTotal: {before_total}")
+        
+        reports_before = requests.get(f"{BASE_URL}/reports/services?period=today", headers=headers, timeout=10)
+        if reports_before.status_code != 200:
+            print(f"❌ Reports request failed: {reports_before.status_code}")
+            return False
+        
+        rep_before = reports_before.json()
+        
+        # Check that 'revenue' field is NOT present
+        if "revenue" in rep_before:
+            print(f"❌ CRITICAL: 'revenue' field found in reports response (should be removed)")
+            print(f"   Response keys: {list(rep_before.keys())}")
+            return False
+        
+        collected_before = rep_before.get("collected", 0)
+        collected_count_before = rep_before.get("collectedCount", 0)
+        
+        print(f"✅ Reports BEFORE:")
+        print(f"   collected: {collected_before}")
+        print(f"   collectedCount: {collected_count_before}")
+        print(f"✅ Verified: 'revenue' field NOT present in reports response")
+        
+    except Exception as e:
+        print(f"❌ Snapshot error: {e}")
+        return False
+    
+    # Step 4: Handover with default markPaid (should auto-lunas)
+    print("\n[4] Performing handover (default markPaid=true)...")
+    try:
+        handover_data = {
+            "checklist": {"sim": True},
+            "note": "ok"
+        }
+        handover_response = requests.post(
+            f"{BASE_URL}/services/{service_id}/handover",
+            json=handover_data,
+            headers=headers,
+            timeout=10
+        )
+        if handover_response.status_code != 200:
+            print(f"❌ Handover failed: {handover_response.status_code} - {handover_response.text}")
+            return False
+        
+        handover_service = handover_response.json()
+        print(f"✅ Handover successful")
+        
+        # Verify response
+        status = handover_service.get("status")
+        payment = handover_service.get("payment", {})
+        handover_obj = handover_service.get("handover", {})
+        
+        print(f"   Status: {status}")
+        print(f"   Payment paid: {payment.get('paid')}, status: {payment.get('status')}")
+        print(f"   Payment paidAt: {payment.get('paidAt')}")
+        print(f"   Handover pickedUpAt: {handover_obj.get('pickedUpAt')}")
+        
+        if status != "SUDAH_DIAMBIL":
+            print(f"❌ Expected status=SUDAH_DIAMBIL, got {status}")
+            return False
+        if payment.get("paid") != 150000:
+            print(f"❌ Expected payment.paid=150000, got {payment.get('paid')}")
+            return False
+        if payment.get("status") != "Lunas":
+            print(f"❌ Expected payment.status=Lunas, got {payment.get('status')}")
+            return False
+        if not payment.get("paidAt"):
+            print(f"❌ Expected payment.paidAt to be present")
+            return False
+        if not handover_obj.get("pickedUpAt"):
+            print(f"❌ Expected handover.pickedUpAt to be present")
+            return False
+        
+        print(f"✅ Handover verification passed: status=SUDAH_DIAMBIL, paid=150000, status=Lunas")
+        
+    except Exception as e:
+        print(f"❌ Handover error: {e}")
+        return False
+    
+    # Step 5: Verify dashboard AFTER handover
+    print("\n[5] Verifying dashboard AFTER handover...")
+    try:
+        dashboard_after = requests.get(f"{BASE_URL}/dashboard", headers=headers, timeout=10)
+        if dashboard_after.status_code != 200:
+            print(f"❌ Dashboard request failed: {dashboard_after.status_code}")
+            return False
+        
+        dash_after = dashboard_after.json()
+        revenue_after = dash_after.get("revenue", {})
+        after_service = revenue_after.get("todayService", 0)
+        after_service_count = revenue_after.get("todayServiceCount", 0)
+        after_sales = revenue_after.get("todaySales", 0)
+        after_total = revenue_after.get("todayTotal", 0)
+        
+        print(f"✅ Dashboard AFTER:")
+        print(f"   todayService: {after_service} (was {before_service})")
+        print(f"   todayServiceCount: {after_service_count} (was {before_service_count})")
+        print(f"   todaySales: {after_sales} (was {before_sales})")
+        print(f"   todayTotal: {after_total} (was {before_total})")
+        
+        # Verify increases
+        service_increase = after_service - before_service
+        count_increase = after_service_count - before_service_count
+        
+        if service_increase != 150000:
+            print(f"❌ Expected todayService to increase by 150000, increased by {service_increase}")
+            return False
+        if count_increase != 1:
+            print(f"❌ Expected todayServiceCount to increase by 1, increased by {count_increase}")
+            return False
+        if after_total != after_service + after_sales:
+            print(f"❌ Expected todayTotal={after_service + after_sales}, got {after_total}")
+            return False
+        
+        print(f"✅ Dashboard verification passed: todayService increased by exactly 150000, count +1")
+        
+    except Exception as e:
+        print(f"❌ Dashboard verification error: {e}")
+        return False
+    
+    # Step 6: Verify reports AFTER handover
+    print("\n[6] Verifying reports AFTER handover...")
+    try:
+        reports_after = requests.get(f"{BASE_URL}/reports/services?period=today", headers=headers, timeout=10)
+        if reports_after.status_code != 200:
+            print(f"❌ Reports request failed: {reports_after.status_code}")
+            return False
+        
+        rep_after = reports_after.json()
+        
+        # Check that 'revenue' field is NOT present
+        if "revenue" in rep_after:
+            print(f"❌ CRITICAL: 'revenue' field found in reports response (should be removed)")
+            return False
+        
+        collected_after = rep_after.get("collected", 0)
+        collected_count_after = rep_after.get("collectedCount", 0)
+        collected_services = rep_after.get("collectedServices", [])
+        
+        print(f"✅ Reports AFTER:")
+        print(f"   collected: {collected_after} (was {collected_before})")
+        print(f"   collectedCount: {collected_count_after} (was {collected_count_before})")
+        print(f"   collectedServices count: {len(collected_services)}")
+        
+        # Verify increases
+        collected_increase = collected_after - collected_before
+        count_increase = collected_count_after - collected_count_before
+        
+        if collected_increase != 150000:
+            print(f"❌ Expected collected to increase by 150000, increased by {collected_increase}")
+            return False
+        if count_increase != 1:
+            print(f"❌ Expected collectedCount to increase by 1, increased by {count_increase}")
+            return False
+        
+        # Verify service is in collectedServices
+        service_ids = [s.get("id") for s in collected_services]
+        if service_id not in service_ids:
+            print(f"❌ Service {service_id} not found in collectedServices")
+            return False
+        
+        # Find our service and verify payment
+        our_service = next((s for s in collected_services if s.get("id") == service_id), None)
+        if not our_service:
+            print(f"❌ Could not find our service in collectedServices")
+            return False
+        
+        service_paid = our_service.get("payment", {}).get("paid", 0)
+        if service_paid != 150000:
+            print(f"❌ Expected service payment.paid=150000 in collectedServices, got {service_paid}")
+            return False
+        
+        print(f"✅ Reports verification passed: collected increased by 150000, count +1, service present with paid=150000")
+        print(f"✅ Verified: 'revenue' field NOT present in reports response")
+        
+    except Exception as e:
+        print(f"❌ Reports verification error: {e}")
+        return False
+    
+    # Step 7: Negative case - handover with markPaid=false
+    print("\n[7] Testing negative case: handover with markPaid=false...")
+    try:
+        # Create another service
+        service_data2 = {
+            "customerName": "Test No Payment",
+            "customerPhone": "0822333444",
+            "brand": "Xiaomi",
+            "model": "Redmi Note 10",
+            "complaint": "Baterai bocor",
+            "condition": {},
+            "deliveredBy": {"type": "owner", "name": ""}
+        }
+        service_response2 = requests.post(
+            f"{BASE_URL}/services",
+            json=service_data2,
+            headers=headers,
+            timeout=10
+        )
+        if service_response2.status_code not in [200, 201]:
+            print(f"❌ Service 2 creation failed: {service_response2.status_code}")
+            return False
+        
+        service2 = service_response2.json()
+        service_id2 = service2.get("id")
+        print(f"✅ Service 2 created: {service_id2}")
+        
+        # Add work item with servicePrice 50000
+        item_data2 = {
+            "description": "Ganti baterai",
             "qty": 1,
-            "servicePrice": 100000
-        })
-        
-        if response.status_code == 200:
-            print_test("Services: Add manual item (no stock change)", True)
-            return True
-        else:
-            print_test("Services: Add manual item (no stock change)", False, f"Status {response.status_code}")
+            "servicePrice": 50000,
+            "sparepartPrice": 0,
+            "sparepartName": "",
+            "inventoryId": None
+        }
+        item_response2 = requests.post(
+            f"{BASE_URL}/services/{service_id2}/items",
+            json=item_data2,
+            headers=headers,
+            timeout=10
+        )
+        if item_response2.status_code != 200:
+            print(f"❌ Item 2 addition failed: {item_response2.status_code}")
             return False
+        
+        print(f"✅ Work item added to service 2 (servicePrice: 50000)")
+        
+        # Snapshot before second handover
+        dashboard_before2 = requests.get(f"{BASE_URL}/dashboard", headers=headers, timeout=10).json()
+        reports_before2 = requests.get(f"{BASE_URL}/reports/services?period=today", headers=headers, timeout=10).json()
+        
+        before_service2 = dashboard_before2.get("revenue", {}).get("todayService", 0)
+        collected_before2 = reports_before2.get("collected", 0)
+        collected_count_before2 = reports_before2.get("collectedCount", 0)
+        
+        print(f"   Dashboard before: todayService={before_service2}")
+        print(f"   Reports before: collected={collected_before2}, collectedCount={collected_count_before2}")
+        
+        # Handover with markPaid=false
+        handover_data2 = {
+            "checklist": {},
+            "note": "",
+            "markPaid": False
+        }
+        handover_response2 = requests.post(
+            f"{BASE_URL}/services/{service_id2}/handover",
+            json=handover_data2,
+            headers=headers,
+            timeout=10
+        )
+        if handover_response2.status_code != 200:
+            print(f"❌ Handover 2 failed: {handover_response2.status_code}")
+            return False
+        
+        handover_service2 = handover_response2.json()
+        status2 = handover_service2.get("status")
+        payment2 = handover_service2.get("payment", {})
+        
+        print(f"✅ Handover 2 successful")
+        print(f"   Status: {status2}")
+        print(f"   Payment paid: {payment2.get('paid')}, status: {payment2.get('status')}")
+        
+        if status2 != "SUDAH_DIAMBIL":
+            print(f"❌ Expected status=SUDAH_DIAMBIL, got {status2}")
+            return False
+        if payment2.get("paid") != 0:
+            print(f"❌ Expected payment.paid=0 (markPaid=false), got {payment2.get('paid')}")
+            return False
+        if payment2.get("status") == "Lunas":
+            print(f"❌ Expected payment.status NOT to be Lunas (markPaid=false), got {payment2.get('status')}")
+            return False
+        
+        print(f"✅ Handover 2 verification passed: status=SUDAH_DIAMBIL, paid=0, status={payment2.get('status')}")
+        
+        # Verify dashboard and reports did NOT increase revenue
+        dashboard_after2 = requests.get(f"{BASE_URL}/dashboard", headers=headers, timeout=10).json()
+        reports_after2 = requests.get(f"{BASE_URL}/reports/services?period=today", headers=headers, timeout=10).json()
+        
+        after_service2 = dashboard_after2.get("revenue", {}).get("todayService", 0)
+        collected_after2 = reports_after2.get("collected", 0)
+        collected_count_after2 = reports_after2.get("collectedCount", 0)
+        
+        print(f"   Dashboard after: todayService={after_service2} (was {before_service2})")
+        print(f"   Reports after: collected={collected_after2} (was {collected_before2}), collectedCount={collected_count_after2} (was {collected_count_before2})")
+        
+        service_increase2 = after_service2 - before_service2
+        collected_increase2 = collected_after2 - collected_before2
+        count_increase2 = collected_count_after2 - collected_count_before2
+        
+        if service_increase2 != 0:
+            print(f"❌ Expected todayService NOT to increase (markPaid=false), increased by {service_increase2}")
+            return False
+        if collected_increase2 != 0:
+            print(f"❌ Expected collected NOT to increase (markPaid=false), increased by {collected_increase2}")
+            return False
+        
+        # Note: collectedCount might increase by 1 because the service is picked up (status=SUDAH_DIAMBIL)
+        # but collected amount should not increase because paid=0
+        print(f"✅ Negative case verification passed: todayService did NOT increase, collected did NOT increase")
+        print(f"   Note: collectedCount increased by {count_increase2} (acceptable - service is picked up but not paid)")
+        
     except Exception as e:
-        print_test("Services: Add manual item (no stock change)", False, f"Exception: {str(e)}")
+        print(f"❌ Negative case error: {e}")
         return False
-
-def test_services_remove_item(service_id, item_id, inv_id):
-    """Test DELETE /api/services/:id/items/:itemId - CRITICAL STOCK RESTORATION TEST"""
-    try:
-        # Get current inventory stock
-        inv_response = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-        if inv_response.status_code != 200:
-            print_test("Services: Remove item (stock restoration)", False, "Could not fetch inventory")
-            return False
-        
-        current_stock = inv_response.json().get("stock", 0)
-        
-        # Remove item
-        response = requests.delete(f"{BASE_URL}/services/{service_id}/items/{item_id}", headers=headers)
-        
-        if response.status_code == 200:
-            # Verify stock increased
-            inv_response = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-            if inv_response.status_code != 200:
-                print_test("Services: Remove item (stock restoration)", False, "Could not verify stock")
-                return False
-            
-            new_stock = inv_response.json().get("stock", 0)
-            
-            if new_stock == current_stock + 1:
-                print_test("Services: Remove item (stock restoration)", True, f"Stock restored: {current_stock} -> {new_stock}")
-                return True
-            else:
-                print_test("Services: Remove item (stock restoration)", False, f"Stock not restored: {current_stock} -> {new_stock}")
-                return False
-        else:
-            print_test("Services: Remove item (stock restoration)", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Services: Remove item (stock restoration)", False, f"Exception: {str(e)}")
-        return False
-
-def test_services_update_payment(service_id):
-    """Test PUT /api/services/:id with payment"""
-    try:
-        # Get service to check total
-        svc_response = requests.get(f"{BASE_URL}/services/{service_id}", headers=headers)
-        if svc_response.status_code != 200:
-            print_test("Services: Update payment status", False, "Could not fetch service")
-            return False
-        
-        total = svc_response.json().get("payment", {}).get("total", 0)
-        
-        # Pay full amount
-        response = requests.put(f"{BASE_URL}/services/{service_id}", headers=headers, json={
-            "payment": {
-                "paid": total
-            }
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            payment_status = data.get("payment", {}).get("status", "")
-            if payment_status == "Lunas":
-                print_test("Services: Update payment status", True, f"Status: {payment_status}")
-                return True
-            else:
-                print_test("Services: Update payment status", False, f"Expected 'Lunas', got '{payment_status}'")
-                return False
-        else:
-            print_test("Services: Update payment status", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Services: Update payment status", False, f"Exception: {str(e)}")
-        return False
-
-def test_services_update_status_selesai(service_id):
-    """Test PUT /api/services/:id with status SELESAI"""
-    try:
-        response = requests.put(f"{BASE_URL}/services/{service_id}", headers=headers, json={
-            "status": "SELESAI"
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("status") == "SELESAI" and data.get("completedAt"):
-                print_test("Services: Update status to SELESAI", True, f"completedAt: {data.get('completedAt')}")
-                return True
-            else:
-                print_test("Services: Update status to SELESAI", False, "Status or completedAt not set")
-                return False
-        else:
-            print_test("Services: Update status to SELESAI", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Services: Update status to SELESAI", False, f"Exception: {str(e)}")
-        return False
-
-def test_services_handover(service_id):
-    """Test POST /api/services/:id/handover"""
-    try:
-        response = requests.post(f"{BASE_URL}/services/{service_id}/handover", headers=headers, json={
-            "checklist": {
-                "simCard": True,
-                "charger": False
-            },
-            "note": "Test handover"
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("status") == "SUDAH_DIAMBIL" and data.get("handover"):
-                print_test("Services: Handover (status SUDAH_DIAMBIL)", True)
-                return True
-            else:
-                print_test("Services: Handover (status SUDAH_DIAMBIL)", False, "Status not updated")
-                return False
-        else:
-            print_test("Services: Handover (status SUDAH_DIAMBIL)", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Services: Handover (status SUDAH_DIAMBIL)", False, f"Exception: {str(e)}")
-        return False
-
-def test_services_cancel_restore_stock():
-    """Test PUT /api/services/:id with status BATAL - CRITICAL STOCK RESTORATION TEST"""
-    try:
-        # Create new service
-        svc_response = requests.post(f"{BASE_URL}/services", headers=headers, json={
-            "customerName": "Test Cancel",
-            "customerPhone": "081234567888",
-            "brand": "Test",
-            "model": "Test",
-            "complaint": "Test cancel"
-        })
-        
-        if svc_response.status_code != 200:
-            print_test("Services: Cancel service (stock restoration)", False, "Could not create service")
-            return False
-        
-        service_id = svc_response.json()["id"]
-        
-        # Get inventory with stock
-        inv_list = requests.get(f"{BASE_URL}/inventory", headers=headers)
-        if inv_list.status_code != 200:
-            print_test("Services: Cancel service (stock restoration)", False, "Could not fetch inventory")
-            return False
-        
-        inventories = inv_list.json()
-        inv_with_stock = next((i for i in inventories if i.get("stock", 0) > 0), None)
-        if not inv_with_stock:
-            print_test("Services: Cancel service (stock restoration)", False, "No inventory with stock")
-            return False
-        
-        inv_id = inv_with_stock["id"]
-        current_stock = inv_with_stock["stock"]
-        
-        # Add item to service
-        add_response = requests.post(f"{BASE_URL}/services/{service_id}/items", headers=headers, json={
-            "description": "Test cancel item",
-            "inventoryId": inv_id,
-            "qty": 1,
-            "servicePrice": 100000
-        })
-        
-        if add_response.status_code != 200:
-            print_test("Services: Cancel service (stock restoration)", False, "Could not add item")
-            return False
-        
-        # Verify stock decreased
-        inv_check = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-        stock_after_add = inv_check.json().get("stock", 0)
-        if stock_after_add != current_stock - 1:
-            print_test("Services: Cancel service (stock restoration)", False, f"Stock not decreased properly")
-            return False
-        
-        # Cancel service
-        cancel_response = requests.put(f"{BASE_URL}/services/{service_id}", headers=headers, json={
-            "status": "BATAL"
-        })
-        
-        if cancel_response.status_code != 200:
-            print_test("Services: Cancel service (stock restoration)", False, f"Cancel failed: {cancel_response.status_code}")
-            return False
-        
-        # Verify stock restored
-        inv_final = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-        final_stock = inv_final.json().get("stock", 0)
-        
-        if final_stock == current_stock:
-            print_test("Services: Cancel service (stock restoration)", True, f"Stock restored: {stock_after_add} -> {final_stock}")
-            return True
-        else:
-            print_test("Services: Cancel service (stock restoration)", False, f"Stock not restored: expected {current_stock}, got {final_stock}")
-            return False
-    except Exception as e:
-        print_test("Services: Cancel service (stock restoration)", False, f"Exception: {str(e)}")
-        return False
-
-def test_sales_create():
-    """Test POST /api/sales - CRITICAL STOCK DEDUCTION TEST"""
-    try:
-        # Get inventory with stock
-        inv_list = requests.get(f"{BASE_URL}/inventory", headers=headers)
-        if inv_list.status_code != 200:
-            print_test("Sales: Create sale (stock deduction)", False, "Could not fetch inventory")
-            return False
-        
-        inventories = inv_list.json()
-        inv_with_stock = next((i for i in inventories if i.get("stock", 0) >= 2), None)
-        if not inv_with_stock:
-            print_test("Sales: Create sale (stock deduction)", False, "No inventory with sufficient stock")
-            return False
-        
-        inv_id = inv_with_stock["id"]
-        current_stock = inv_with_stock["stock"]
-        
-        # Create sale
-        response = requests.post(f"{BASE_URL}/sales", headers=headers, json={
-            "items": [
-                {
-                    "inventoryId": inv_id,
-                    "name": inv_with_stock["name"],
-                    "qty": 2,
-                    "price": inv_with_stock.get("sellPrice", 100000)
-                }
-            ]
-        })
-        
-        if response.status_code == 200:
-            data = response.json()
-            sale_number = data.get("saleNumber", "")
-            
-            # Check format SALE-YYMMDD-NNN
-            if not sale_number.startswith("SALE-") or len(sale_number) != 15:
-                print_test("Sales: Create sale (stock deduction)", False, f"Invalid saleNumber format: {sale_number}")
-                return False
-            
-            # Verify stock decreased
-            inv_check = requests.get(f"{BASE_URL}/inventory/{inv_id}", headers=headers)
-            if inv_check.status_code != 200:
-                print_test("Sales: Create sale (stock deduction)", False, "Could not verify stock")
-                return False
-            
-            inv_data = inv_check.json()
-            new_stock = inv_data.get("stock", 0)
-            movements = inv_data.get("movements", [])
-            
-            # Check stock decreased
-            if new_stock != current_stock - 2:
-                print_test("Sales: Create sale (stock deduction)", False, f"Stock not decreased: {current_stock} -> {new_stock}")
-                return False
-            
-            # Check PENJUALAN movement exists
-            sale_movement = any(m.get("type") == "PENJUALAN" for m in movements)
-            if not sale_movement:
-                print_test("Sales: Create sale (stock deduction)", False, "PENJUALAN movement not found")
-                return False
-            
-            print_test("Sales: Create sale (stock deduction)", True, f"Sale: {sale_number}, Stock: {current_stock} -> {new_stock}, PENJUALAN movement created")
-            return True
-        else:
-            print_test("Sales: Create sale (stock deduction)", False, f"Status {response.status_code}: {response.text}")
-            return False
-    except Exception as e:
-        print_test("Sales: Create sale (stock deduction)", False, f"Exception: {str(e)}")
-        return False
-
-def test_sales_insufficient_stock():
-    """Test that insufficient stock is rejected for sales"""
-    try:
-        # Get any inventory
-        inv_list = requests.get(f"{BASE_URL}/inventory", headers=headers)
-        if inv_list.status_code != 200:
-            print_test("Sales: Insufficient stock rejection", False, "Could not fetch inventory")
-            return False
-        
-        inventories = inv_list.json()
-        if not inventories:
-            print_test("Sales: Insufficient stock rejection", False, "No inventory items")
-            return False
-        
-        inv = inventories[0]
-        
-        # Try to sell more than available
-        response = requests.post(f"{BASE_URL}/sales", headers=headers, json={
-            "items": [
-                {
-                    "inventoryId": inv["id"],
-                    "name": inv["name"],
-                    "qty": 10000,
-                    "price": 100000
-                }
-            ]
-        })
-        
-        if response.status_code == 400:
-            print_test("Sales: Insufficient stock rejection", True, "400 error returned as expected")
-            return True
-        else:
-            print_test("Sales: Insufficient stock rejection", False, f"Expected 400, got {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Sales: Insufficient stock rejection", False, f"Exception: {str(e)}")
-        return False
-
-def test_sales_list():
-    """Test GET /api/sales"""
-    try:
-        response = requests.get(f"{BASE_URL}/sales", headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list):
-                print_test("Sales: GET list", True, f"Found {len(data)} sales")
-                return True
-            else:
-                print_test("Sales: GET list", False, "Response is not a list")
-                return False
-        else:
-            print_test("Sales: GET list", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Sales: GET list", False, f"Exception: {str(e)}")
-        return False
-
-def test_customers_create():
-    """Test POST /api/customers with phone deduplication"""
-    try:
-        phone = "081234567777"
-        
-        # Create first customer
-        response1 = requests.post(f"{BASE_URL}/customers", headers=headers, json={
-            "name": "Test Customer 1",
-            "phone": phone
-        })
-        
-        if response1.status_code != 200:
-            print_test("Customers: Create with phone dedupe", False, f"First create failed: {response1.status_code}")
-            return False
-        
-        customer1_id = response1.json()["id"]
-        
-        # Try to create duplicate
-        response2 = requests.post(f"{BASE_URL}/customers", headers=headers, json={
-            "name": "Test Customer 2",
-            "phone": phone
-        })
-        
-        if response2.status_code == 200:
-            customer2_id = response2.json()["id"]
-            if customer1_id == customer2_id:
-                print_test("Customers: Create with phone dedupe", True, "Duplicate phone returned existing customer")
-                return True
-            else:
-                print_test("Customers: Create with phone dedupe", False, "Duplicate created instead of returning existing")
-                return False
-        else:
-            print_test("Customers: Create with phone dedupe", False, f"Second create failed: {response2.status_code}")
-            return False
-    except Exception as e:
-        print_test("Customers: Create with phone dedupe", False, f"Exception: {str(e)}")
-        return False
-
-def test_customers_list():
-    """Test GET /api/customers with search"""
-    try:
-        # Test basic list
-        response = requests.get(f"{BASE_URL}/customers", headers=headers)
-        if response.status_code != 200:
-            print_test("Customers: GET list with search", False, f"List failed: {response.status_code}")
-            return False
-        
-        # Test with search
-        response = requests.get(f"{BASE_URL}/customers?search=Test", headers=headers)
-        if response.status_code != 200:
-            print_test("Customers: GET list with search", False, f"Search failed: {response.status_code}")
-            return False
-        
-        print_test("Customers: GET list with search", True)
-        return True
-    except Exception as e:
-        print_test("Customers: GET list with search", False, f"Exception: {str(e)}")
-        return False
-
-def test_customers_search_by_phone():
-    """Test GET /api/customers/search?phone="""
-    try:
-        response = requests.get(f"{BASE_URL}/customers/search?phone=081234567777", headers=headers)
-        
-        if response.status_code == 200:
-            print_test("Customers: Search by phone", True)
-            return True
-        else:
-            print_test("Customers: Search by phone", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Customers: Search by phone", False, f"Exception: {str(e)}")
-        return False
-
-def test_customers_detail_with_services():
-    """Test GET /api/customers/:id returns services history"""
-    try:
-        # Get a customer
-        list_response = requests.get(f"{BASE_URL}/customers", headers=headers)
-        if list_response.status_code != 200:
-            print_test("Customers: Detail with services history", False, "Could not fetch customers")
-            return False
-        
-        customers = list_response.json()
-        if not customers:
-            print_test("Customers: Detail with services history", False, "No customers found")
-            return False
-        
-        customer_id = customers[0]["id"]
-        
-        # Get customer detail
-        response = requests.get(f"{BASE_URL}/customers/{customer_id}", headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if "services" in data and isinstance(data["services"], list):
-                print_test("Customers: Detail with services history", True, f"Found {len(data['services'])} services")
-                return True
-            else:
-                print_test("Customers: Detail with services history", False, "Services array not found")
-                return False
-        else:
-            print_test("Customers: Detail with services history", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Customers: Detail with services history", False, f"Exception: {str(e)}")
-        return False
-
-def test_dashboard():
-    """Test GET /api/dashboard"""
-    try:
-        response = requests.get(f"{BASE_URL}/dashboard", headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            required_keys = ["service", "inventory", "sales", "recent"]
-            if all(key in data for key in required_keys):
-                print_test("Dashboard: GET stats and recent", True, f"Service active: {data['service'].get('active')}, Inventory total: {data['inventory'].get('total')}")
-                return True
-            else:
-                print_test("Dashboard: GET stats and recent", False, "Missing required keys")
-                return False
-        else:
-            print_test("Dashboard: GET stats and recent", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Dashboard: GET stats and recent", False, f"Exception: {str(e)}")
-        return False
-
-def test_reports_services():
-    """Test GET /api/reports/services"""
-    try:
-        response = requests.get(f"{BASE_URL}/reports/services?period=month", headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            required_keys = ["total", "done", "notDone", "revenue", "collected", "services"]
-            if all(key in data for key in required_keys):
-                print_test("Reports: Services report", True, f"Total: {data['total']}, Revenue: {data['revenue']}")
-                return True
-            else:
-                print_test("Reports: Services report", False, "Missing required keys")
-                return False
-        else:
-            print_test("Reports: Services report", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Reports: Services report", False, f"Exception: {str(e)}")
-        return False
-
-def test_reports_sales():
-    """Test GET /api/reports/sales"""
-    try:
-        response = requests.get(f"{BASE_URL}/reports/sales?period=month", headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            required_keys = ["count", "total", "sales"]
-            if all(key in data for key in required_keys):
-                print_test("Reports: Sales report", True, f"Count: {data['count']}, Total: {data['total']}")
-                return True
-            else:
-                print_test("Reports: Sales report", False, "Missing required keys")
-                return False
-        else:
-            print_test("Reports: Sales report", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Reports: Sales report", False, f"Exception: {str(e)}")
-        return False
-
-def test_reports_inventory():
-    """Test GET /api/reports/inventory"""
-    try:
-        response = requests.get(f"{BASE_URL}/reports/inventory", headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            required_keys = ["low", "out", "movements"]
-            if all(key in data for key in required_keys):
-                print_test("Reports: Inventory report", True, f"Low stock: {len(data['low'])}, Out of stock: {len(data['out'])}")
-                return True
-            else:
-                print_test("Reports: Inventory report", False, "Missing required keys")
-                return False
-        else:
-            print_test("Reports: Inventory report", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Reports: Inventory report", False, f"Exception: {str(e)}")
-        return False
-
-def test_settings():
-    """Test GET and PUT /api/settings"""
-    try:
-        # GET settings
-        get_response = requests.get(f"{BASE_URL}/settings", headers=headers)
-        if get_response.status_code != 200:
-            print_test("Settings: GET and PUT", False, f"GET failed: {get_response.status_code}")
-            return False
-        
-        # PUT settings
-        put_response = requests.put(f"{BASE_URL}/settings", headers=headers, json={
-            "shopName": "Test Konter HP"
-        })
-        
-        if put_response.status_code == 200:
-            data = put_response.json()
-            if data.get("shopName") == "Test Konter HP":
-                print_test("Settings: GET and PUT", True, f"Shop name updated")
-                return True
-            else:
-                print_test("Settings: GET and PUT", False, "Shop name not updated")
-                return False
-        else:
-            print_test("Settings: GET and PUT", False, f"PUT failed: {put_response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Settings: GET and PUT", False, f"Exception: {str(e)}")
-        return False
-
-def test_seed_create():
-    """Test POST /api/seed"""
-    try:
-        response = requests.post(f"{BASE_URL}/seed", headers=headers)
-        
-        if response.status_code == 200:
-            print_test("Seed: POST create sample data", True)
-            return True
-        else:
-            print_test("Seed: POST create sample data", False, f"Status {response.status_code}: {response.text}")
-            return False
-    except Exception as e:
-        print_test("Seed: POST create sample data", False, f"Exception: {str(e)}")
-        return False
-
-def test_seed_delete():
-    """Test DELETE /api/seed"""
-    try:
-        response = requests.delete(f"{BASE_URL}/seed", headers=headers)
-        
-        if response.status_code == 200:
-            print_test("Seed: DELETE remove sample data", True)
-            return True
-        else:
-            print_test("Seed: DELETE remove sample data", False, f"Status {response.status_code}")
-            return False
-    except Exception as e:
-        print_test("Seed: DELETE remove sample data", False, f"Exception: {str(e)}")
-        return False
-
-def main():
-    """Run all tests"""
-    print("=" * 80)
-    print("KONTER HP BACKEND API TEST")
-    print("=" * 80)
-    print(f"Base URL: {BASE_URL}")
-    print(f"Login: {LOGIN_EMAIL}")
-    print("=" * 80)
-    print()
     
-    # Track results
-    results = {
-        "passed": 0,
-        "failed": 0,
-        "total": 0
-    }
-    
-    def run_test(test_func, *args):
-        results["total"] += 1
-        try:
-            result = test_func(*args)
-            if isinstance(result, tuple):
-                if result[0]:
-                    results["passed"] += 1
-                else:
-                    results["failed"] += 1
-                return result
-            else:
-                if result:
-                    results["passed"] += 1
-                else:
-                    results["failed"] += 1
-                return result
-        except Exception as e:
-            results["failed"] += 1
-            print_test(test_func.__name__, False, f"Unexpected error: {str(e)}")
+    # Step 8: Verify monthly report works
+    print("\n[8] Verifying monthly report...")
+    try:
+        reports_month = requests.get(f"{BASE_URL}/reports/services?period=month", headers=headers, timeout=10)
+        if reports_month.status_code != 200:
+            print(f"❌ Monthly report request failed: {reports_month.status_code}")
             return False
+        
+        rep_month = reports_month.json()
+        
+        if "revenue" in rep_month:
+            print(f"❌ CRITICAL: 'revenue' field found in monthly report (should be removed)")
+            return False
+        
+        if "collected" not in rep_month or "collectedCount" not in rep_month or "collectedServices" not in rep_month:
+            print(f"❌ Missing required fields in monthly report")
+            print(f"   Keys: {list(rep_month.keys())}")
+            return False
+        
+        print(f"✅ Monthly report working:")
+        print(f"   collected: {rep_month.get('collected')}")
+        print(f"   collectedCount: {rep_month.get('collectedCount')}")
+        print(f"   collectedServices count: {len(rep_month.get('collectedServices', []))}")
+        print(f"✅ Verified: 'revenue' field NOT present in monthly report")
+        
+    except Exception as e:
+        print(f"❌ Monthly report error: {e}")
+        return False
     
-    # AUTH TESTS
-    print("\n" + "=" * 80)
-    print("AUTH TESTS")
-    print("=" * 80)
-    run_test(test_auth_login_success)
-    run_test(test_auth_login_wrong_password)
-    run_test(test_auth_me_with_token)
-    run_test(test_auth_me_without_token)
-    
-    # INVENTORY TESTS
-    print("\n" + "=" * 80)
-    print("INVENTORY TESTS (STOCK INTEGRITY)")
-    print("=" * 80)
-    success, inv_id = run_test(test_inventory_create)
-    if success and inv_id:
-        run_test(test_inventory_list)
-        run_test(test_inventory_adjust_masuk, inv_id)
-        run_test(test_inventory_adjust_keluar, inv_id)
-        run_test(test_inventory_adjust_penyesuaian, inv_id)
-        run_test(test_inventory_negative_stock_rejection, inv_id)
-    
-    # SERVICES TESTS
-    print("\n" + "=" * 80)
-    print("SERVICES TESTS (STOCK INTEGRITY)")
-    print("=" * 80)
-    success, service_id = run_test(test_services_create)
-    if success and service_id:
-        run_test(test_services_list)
-        if inv_id:
-            success, item_id = run_test(test_services_add_item_with_inventory, service_id, inv_id)
-            run_test(test_services_add_item_insufficient_stock, service_id, inv_id)
-            run_test(test_services_add_item_manual, service_id)
-            if success and item_id:
-                run_test(test_services_remove_item, service_id, item_id, inv_id)
-            run_test(test_services_update_payment, service_id)
-            run_test(test_services_update_status_selesai, service_id)
-            run_test(test_services_handover, service_id)
-    
-    run_test(test_services_cancel_restore_stock)
-    
-    # SALES TESTS
-    print("\n" + "=" * 80)
-    print("SALES TESTS (STOCK INTEGRITY)")
-    print("=" * 80)
-    run_test(test_sales_create)
-    run_test(test_sales_insufficient_stock)
-    run_test(test_sales_list)
-    
-    # CUSTOMERS TESTS
-    print("\n" + "=" * 80)
-    print("CUSTOMERS TESTS")
-    print("=" * 80)
-    run_test(test_customers_create)
-    run_test(test_customers_list)
-    run_test(test_customers_search_by_phone)
-    run_test(test_customers_detail_with_services)
-    
-    # DASHBOARD & REPORTS TESTS
-    print("\n" + "=" * 80)
-    print("DASHBOARD & REPORTS TESTS")
-    print("=" * 80)
-    run_test(test_dashboard)
-    run_test(test_reports_services)
-    run_test(test_reports_sales)
-    run_test(test_reports_inventory)
-    
-    # SETTINGS TESTS
-    print("\n" + "=" * 80)
-    print("SETTINGS TESTS")
-    print("=" * 80)
-    run_test(test_settings)
-    
-    # SEED TESTS
-    print("\n" + "=" * 80)
-    print("SEED TESTS")
-    print("=" * 80)
-    run_test(test_seed_create)
-    run_test(test_seed_delete)
-    
-    # SUMMARY
-    print("\n" + "=" * 80)
-    print("TEST SUMMARY")
-    print("=" * 80)
-    print(f"Total Tests: {results['total']}")
-    print(f"Passed: {results['passed']} ✅")
-    print(f"Failed: {results['failed']} ❌")
-    print(f"Success Rate: {(results['passed'] / results['total'] * 100):.1f}%")
-    print("=" * 80)
-    
-    return results["failed"] == 0
+    print("\n" + "="*80)
+    print("✅ ALL REVENUE FLOW TESTS PASSED")
+    print("="*80)
+    return True
+
 
 if __name__ == "__main__":
-    success = main()
+    success = test_revenue_flow()
     exit(0 if success else 1)

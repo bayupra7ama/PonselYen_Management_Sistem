@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
@@ -69,7 +69,7 @@ function StatCard({ icon: Icon, label, value, sub, tone = 'default', onClick }) 
         <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
           {Icon && <Icon className="h-4 w-4" />} {label}
         </div>
-        <div className={`mt-2 text-2xl font-bold ${tones[tone]}`}>{value}</div>
+        <div className={`mt-2 font-bold leading-tight break-words ${typeof value === 'string' && value.length > 9 ? 'text-lg sm:text-xl' : 'text-2xl'} ${tones[tone]}`}>{value}</div>
         {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
       </CardContent>
     </Card>
@@ -161,10 +161,11 @@ function Dashboard({ token, go }) {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted-foreground">Penjualan Hari Ini</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard icon={TrendingUp} label="Total Penjualan" value={rupiah(data.sales.todayTotal)} tone="success" />
-          <StatCard icon={ShoppingCart} label="Transaksi" value={data.sales.todayCount} onClick={() => go('sale')} />
+        <h2 className="text-sm font-semibold text-muted-foreground">Pendapatan Hari Ini</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard icon={TrendingUp} label="Total Pendapatan" value={rupiah(data.revenue?.todayTotal || 0)} tone="primary" />
+          <StatCard icon={Wrench} label="Dari Service" value={rupiah(data.revenue?.todayService || 0)} sub={`${data.revenue?.todayServiceCount || 0} HP diambil`} tone="success" />
+          <StatCard icon={ShoppingCart} label="Dari Penjualan" value={rupiah(data.sales.todayTotal)} sub={`${data.sales.todayCount} transaksi`} tone="success" onClick={() => go('sale')} />
         </div>
       </section>
 
@@ -189,6 +190,50 @@ function Dashboard({ token, go }) {
           ))}
         </div>
       </section>
+    </div>
+  )
+}
+
+// ---------------- Item Search (dropdown dengan pencarian, ramah HP) ----------------
+function ItemSearch({ items, onPick, placeholder = 'Cari barang...', renderMeta, emptyText = 'Barang tidak ditemukan.', autoFocus = false, limit = 40 }) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    const list = !s ? items : items.filter((x) => [x.name, x.sku, x.category, x.brand, x.model, x.location].filter(Boolean).some((v) => String(v).toLowerCase().includes(s)))
+    return list.slice(0, limit)
+  }, [items, q, limit])
+  const pick = (x) => { onPick(x); setQ(''); setOpen(false) }
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          className="pl-9 pr-9"
+          value={q}
+          autoFocus={autoFocus}
+          placeholder={placeholder}
+          onChange={(e) => { setQ(e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+        />
+        {(q || open) && (
+          <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground" onClick={() => { setQ(''); setOpen(false) }} aria-label="Tutup">
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="rounded-md border bg-card max-h-56 overflow-y-auto divide-y" data-testid="item-search-list">
+          {filtered.length === 0 && <div className="p-3 text-sm text-muted-foreground text-center">{emptyText}</div>}
+          {filtered.map((x) => (
+            <button key={x.id} type="button" onClick={() => pick(x)} className="w-full text-left px-3 py-2.5 hover:bg-accent active:bg-accent focus:bg-accent focus:outline-none">
+              <div className="text-sm font-medium leading-tight">{x.name}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{renderMeta ? renderMeta(x) : `stok ${x.stock}`}</div>
+            </button>
+          ))}
+          {items.length > filtered.length && q.trim() === '' && <div className="p-2 text-[11px] text-muted-foreground text-center">Menampilkan {filtered.length} dari {items.length} — ketik untuk mencari</div>}
+        </div>
+      )}
     </div>
   )
 }
@@ -303,7 +348,7 @@ function NewServiceDialog({ token, open, onOpenChange, onCreated }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-lg max-h-[92vh] overflow-y-auto rounded-lg p-4 sm:p-6">
         <DialogHeader><DialogTitle>Service Baru</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <SectionLabel>Data Pelanggan</SectionLabel>
@@ -547,11 +592,11 @@ function AddItemDialog({ token, serviceId, open, onOpenChange, onDone }) {
     }
   }, [open, token])
 
-  const pickInv = (id) => {
-    if (id === 'none') { setF((p) => ({ ...p, inventoryId: 'none', sparepartName: '', sparepartPrice: 0 })); return }
-    const item = inv.find((x) => x.id === id)
-    setF((p) => ({ ...p, inventoryId: id, sparepartName: item?.name || '', sparepartPrice: item?.sellPrice || 0, description: p.description || `Ganti ${item?.name || ''}` }))
+  const pickInv = (item) => {
+    if (!item) { setF((p) => ({ ...p, inventoryId: 'none', sparepartName: '', sparepartPrice: 0 })); return }
+    setF((p) => ({ ...p, inventoryId: item.id, sparepartName: item.name || '', sparepartPrice: item.sellPrice || 0, description: p.description || `Ganti ${item.name || ''}` }))
   }
+  const selectedInv = f.inventoryId !== 'none' ? inv.find((x) => x.id === f.inventoryId) : null
 
   const submit = async () => {
     if (!f.description.trim() && !f.sparepartName.trim()) return toast.error('Isi deskripsi pekerjaan.')
@@ -573,20 +618,32 @@ function AddItemDialog({ token, serviceId, open, onOpenChange, onDone }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-md max-h-[92vh] overflow-y-auto rounded-lg p-4 sm:p-6" data-testid="add-item-dialog">
         <DialogHeader><DialogTitle>Tambah Perbaikan</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5"><Label>Deskripsi Pekerjaan *</Label><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Ganti LCD" /></div>
           <div className="space-y-1.5">
             <Label>Sparepart dari Inventory</Label>
-            <Select value={f.inventoryId} onValueChange={pickInv}>
-              <SelectTrigger><SelectValue placeholder="Pilih sparepart" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— Tanpa stok / manual —</SelectItem>
-                {inv.map((x) => <SelectItem key={x.id} value={x.id}>{x.name} (stok {x.stock})</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {f.inventoryId === 'none' && <Input className="mt-2" value={f.sparepartName} onChange={(e) => setF({ ...f, sparepartName: e.target.value })} placeholder="Nama sparepart (opsional)" />}
+            {selectedInv ? (
+              <div className="flex items-center justify-between gap-2 border rounded-md px-3 py-2 bg-accent/40" data-testid="selected-sparepart">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">{selectedInv.name}</div>
+                  <div className="text-xs text-muted-foreground">{rupiah(selectedInv.sellPrice)} · stok {selectedInv.stock}</div>
+                </div>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs shrink-0" onClick={() => pickInv(null)}>Ganti</Button>
+              </div>
+            ) : (
+              <>
+                <ItemSearch
+                  items={inv}
+                  onPick={pickInv}
+                  placeholder="Cari sparepart (nama / SKU)..."
+                  renderMeta={(x) => `${rupiah(x.sellPrice)} · stok ${x.stock}${x.category ? ` · ${x.category}` : ''}`}
+                />
+                <p className="text-[11px] text-muted-foreground">Kosongkan jika tanpa stok / sparepart manual.</p>
+                <Input value={f.sparepartName} onChange={(e) => setF({ ...f, sparepartName: e.target.value })} placeholder="Nama sparepart manual (opsional)" />
+              </>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1.5"><Label>Qty</Label><Input type="number" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></div>
@@ -608,14 +665,19 @@ function AddItemDialog({ token, serviceId, open, onOpenChange, onDone }) {
 function HandoverDialog({ token, service, open, onOpenChange, onDone }) {
   const [chk, setChk] = useState({ sim: false, sd: false, casing: false, buttons: false })
   const [note, setNote] = useState('')
+  const [markPaid, setMarkPaid] = useState(true)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (open) { setChk({ sim: false, sd: false, casing: false, buttons: false }); setNote('') } }, [open])
+  useEffect(() => { if (open) { setChk({ sim: false, sd: false, casing: false, buttons: false }); setNote(''); setMarkPaid(true) } }, [open])
+
+  const total = service?.payment?.total || 0
+  const paid = service?.payment?.paid || 0
+  const remaining = Math.max(0, total - paid)
 
   const submit = async () => {
     setSaving(true)
     try {
-      const d = await api(`/services/${service.id}/handover`, { method: 'POST', token, body: { checklist: chk, note } })
-      toast.success('HP diserahkan ke pelanggan.')
+      const d = await api(`/services/${service.id}/handover`, { method: 'POST', token, body: { checklist: chk, note, markPaid } })
+      toast.success(markPaid && remaining > 0 ? `HP diserahkan. Pembayaran ${rupiah(remaining)} dicatat lunas.` : 'HP diserahkan ke pelanggan.')
       onDone(d)
     } catch (err) { toast.error(err.message) } finally { setSaving(false) }
   }
@@ -627,9 +689,21 @@ function HandoverDialog({ token, service, open, onOpenChange, onDone }) {
   )
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-md max-h-[92vh] overflow-y-auto rounded-lg p-4 sm:p-6" data-testid="handover-dialog">
         <DialogHeader><DialogTitle>Serahkan HP</DialogTitle></DialogHeader>
         <div className="space-y-1">
+          <div className="rounded-lg border bg-muted/40 p-3 text-sm space-y-1 mb-2">
+            <div className="flex justify-between"><span className="text-muted-foreground">Total Biaya</span><span className="font-semibold">{rupiah(total)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Sudah Dibayar</span><span>{rupiah(paid)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Sisa Bayar</span><span className={`font-bold ${remaining > 0 ? 'text-amber-600' : 'text-green-600'}`}>{rupiah(remaining)}</span></div>
+            {total > 0 && remaining > 0 && (
+              <label className="flex items-center gap-3 pt-2 cursor-pointer">
+                <input type="checkbox" checked={markPaid} onChange={(e) => setMarkPaid(e.target.checked)} className="h-5 w-5 accent-green-600" data-testid="mark-paid-checkbox" />
+                <span className="text-sm">Pelanggan bayar sisa {rupiah(remaining)} — tandai <b>Lunas</b> (masuk pendapatan)</span>
+              </label>
+            )}
+            {total > 0 && remaining === 0 && <div className="text-xs text-green-600 pt-1">Pembayaran sudah lunas.</div>}
+          </div>
           <p className="text-sm text-muted-foreground mb-2">Cek kelengkapan sebelum menyerahkan:</p>
           <Row k="sim" label="SIM Card dikembalikan" />
           <Row k="sd" label="SD Card dikembalikan" />
@@ -748,7 +822,7 @@ function InventoryFormDialog({ token, open, onOpenChange, item, onDone }) {
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-lg max-h-[92vh] overflow-y-auto rounded-lg p-4 sm:p-6">
         <DialogHeader><DialogTitle>{item ? 'Edit Barang' : 'Barang Baru'}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5"><Label>Nama *</Label><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Tombol Power Samsung A52" /></div>
@@ -796,7 +870,7 @@ function AdjustDialog({ token, item, onOpenChange, onDone }) {
   }
   return (
     <Dialog open={!!item} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-sm rounded-lg p-4 sm:p-6">
         <DialogHeader><DialogTitle>Ubah Stok — {item.name}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="text-sm text-muted-foreground">Stok saat ini: <span className="font-semibold text-foreground">{item.stock}</span></div>
@@ -896,14 +970,22 @@ function NewSaleDialog({ token, open, onOpenChange, onDone }) {
   const [saving, setSaving] = useState(false)
   useEffect(() => { if (open) { setCart([]); api('/inventory', { token }).then(setInv).catch(() => {}) } }, [open, token])
 
-  const addToCart = (id) => {
-    const item = inv.find((x) => x.id === id); if (!item) return
-    if (cart.find((c) => c.inventoryId === id)) return toast.info('Barang sudah ada di keranjang.')
-    setCart([...cart, { inventoryId: id, name: item.name, price: item.sellPrice, qty: 1, stock: item.stock }])
+  const addToCart = (item) => {
+    if (!item) return
+    if (item.stock <= 0) return toast.error('Stok barang habis.')
+    const existing = cart.find((c) => c.inventoryId === item.id)
+    if (existing) {
+      if (Number(existing.qty) + 1 > item.stock) return toast.error(`Stok ${item.name} hanya ${item.stock}.`)
+      setCart(cart.map((c) => c.inventoryId === item.id ? { ...c, qty: Number(c.qty) + 1 } : c))
+      return
+    }
+    setCart([...cart, { inventoryId: item.id, name: item.name, price: item.sellPrice, qty: 1, stock: item.stock }])
   }
   const setQty = (id, q) => setCart(cart.map((c) => c.inventoryId === id ? { ...c, qty: q } : c))
+  const step = (id, d) => setCart(cart.map((c) => c.inventoryId === id ? { ...c, qty: Math.max(1, Math.min(c.stock, (Number(c.qty) || 0) + d)) } : c))
   const remove = (id) => setCart(cart.filter((c) => c.inventoryId !== id))
   const total = cart.reduce((s, c) => s + (Number(c.price) || 0) * (Number(c.qty) || 0), 0)
+  const available = useMemo(() => inv.filter((x) => x.stock > 0), [inv])
 
   const submit = async () => {
     if (!cart.length) return toast.error('Keranjang kosong.')
@@ -918,34 +1000,44 @@ function NewSaleDialog({ token, open, onOpenChange, onDone }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-md max-h-[92vh] overflow-y-auto rounded-lg p-4 sm:p-6" data-testid="new-sale-dialog">
         <DialogHeader><DialogTitle>Transaksi Baru</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <Select value="" onValueChange={addToCart}>
-            <SelectTrigger><SelectValue placeholder="+ Pilih barang" /></SelectTrigger>
-            <SelectContent>
-              {inv.filter((x) => x.stock > 0).map((x) => <SelectItem key={x.id} value={x.id}>{x.name} — {rupiah(x.sellPrice)} (stok {x.stock})</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <ItemSearch
+            items={available}
+            onPick={addToCart}
+            placeholder="Cari barang (nama / SKU / kategori)..."
+            renderMeta={(x) => `${rupiah(x.sellPrice)} · stok ${x.stock}${x.category ? ` · ${x.category}` : ''}`}
+            emptyText="Barang tidak ditemukan atau stok habis."
+          />
           <div className="space-y-2">
-            {cart.length === 0 && <EmptyState text="Belum ada barang." />}
+            {cart.length === 0 && <EmptyState text="Keranjang masih kosong. Cari lalu ketuk barang untuk menambahkan." />}
             {cart.map((c) => (
-              <div key={c.inventoryId} className="flex items-center gap-2 border rounded-lg p-2">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{c.name}</div>
-                  <div className="text-xs text-muted-foreground">{rupiah(c.price)} · stok {c.stock}</div>
+              <div key={c.inventoryId} className="border rounded-lg p-2.5 space-y-2" data-testid="cart-row">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium leading-tight break-words">{c.name}</div>
+                    <div className="text-xs text-muted-foreground">{rupiah(c.price)} · stok {c.stock}</div>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 -mr-1 -mt-1 text-red-500 shrink-0" onClick={() => remove(c.inventoryId)} aria-label="Hapus"><X className="h-4 w-4" /></Button>
                 </div>
-                <Input type="number" className="w-16" value={c.qty} onChange={(e) => setQty(c.inventoryId, e.target.value)} />
-                <div className="w-24 text-right text-sm font-semibold">{rupiah((c.price || 0) * (c.qty || 0))}</div>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => remove(c.inventoryId)}><X className="h-4 w-4" /></Button>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => step(c.inventoryId, -1)} aria-label="Kurangi">−</Button>
+                    <Input type="number" inputMode="numeric" className="w-14 h-8 text-center px-1" value={c.qty} onChange={(e) => setQty(c.inventoryId, e.target.value)} />
+                    <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => step(c.inventoryId, 1)} aria-label="Tambah">+</Button>
+                  </div>
+                  <div className="text-sm font-semibold text-right">{rupiah((Number(c.price) || 0) * (Number(c.qty) || 0))}</div>
+                </div>
               </div>
             ))}
           </div>
+          <Separator />
           <div className="flex justify-between text-lg font-bold"><span>Total</span><span>{rupiah(total)}</span></div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Batal</Button>
-          <Button onClick={submit} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Simpan</Button>
+          <Button onClick={submit} disabled={saving || cart.length === 0}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Simpan Transaksi</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1053,13 +1145,25 @@ function Reports({ token }) {
 
         <TabsContent value="service" className="mt-4 space-y-3">
           {!svc ? <Loading /> : (<>
+            <StatCard icon={TrendingUp} label="Pendapatan Service Terkumpul" value={rupiah(svc.collected)} sub={`${svc.collectedCount || 0} service selesai & diambil`} tone="success" />
             <div className="grid grid-cols-2 gap-3">
-              <StatCard label="Total Service" value={svc.total} />
+              <StatCard label="Total Service Masuk" value={svc.total} />
               <StatCard label="Selesai" value={svc.done} tone="success" />
               <StatCard label="Belum Selesai" value={svc.notDone} tone="warn" />
               <StatCard label="Belum Diambil" value={svc.unclaimed} tone="warn" />
-              <StatCard label="Total Biaya" value={rupiah(svc.revenue)} tone="primary" />
-              <StatCard label="Terkumpul" value={rupiah(svc.collected)} tone="success" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold mb-2">Rincian Service Terkumpul</h3>
+              {(!svc.collectedServices || svc.collectedServices.length === 0) && <EmptyState text="Belum ada service yang diambil pada periode ini." />}
+              {(svc.collectedServices || []).map((s) => (
+                <div key={s.id} className="flex items-center justify-between text-sm border-b py-2 gap-2" data-testid="collected-row">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{s.serviceNumber} · {s.brand} {s.model}</div>
+                    <div className="text-xs text-muted-foreground truncate">{s.customerName || s.customer?.name || ''}{s.handover?.pickedUpAt ? ` · diambil ${formatDate(s.handover.pickedUpAt)}` : ''}</div>
+                  </div>
+                  <span className="font-semibold text-green-600 shrink-0">{rupiah(s.payment?.paid)}</span>
+                </div>
+              ))}
             </div>
           </>)}
         </TabsContent>
@@ -1316,7 +1420,7 @@ function App() {
       <Shell me={me} settings={settings} tab={shellTab} go={go} onLogout={onLogout}>{content}</Shell>
       {printService && <Receipt service={printService} settings={settings} width={printWidth} />}
       <Dialog open={!!printAsk} onOpenChange={(v) => !v && setPrintAsk(null)}>
-        <DialogContent className="max-w-xs">
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-xs rounded-lg p-4 sm:p-6">
           <DialogHeader><DialogTitle>Cetak Nota</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">Pilih ukuran kertas thermal:</p>
           <div className="flex gap-3">

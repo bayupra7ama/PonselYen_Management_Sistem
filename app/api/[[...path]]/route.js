@@ -449,7 +449,14 @@ async function handleRoute(request, { params }) {
         checklist: body.checklist || {},
         note: body.note || '',
       }
-      await db.collection('services').updateOne({ id: path[1] }, { $set: { status: 'SUDAH_DIAMBIL', handover, updatedAt: new Date() } })
+      const set = { status: 'SUDAH_DIAMBIL', handover, updatedAt: new Date() }
+      // Saat HP diambil, pembayaran otomatis dianggap lunas (kecuali markPaid=false) sehingga pendapatan bertambah
+      const markPaid = body.markPaid !== false
+      const total = s.payment?.total || 0
+      if (markPaid && total > 0) {
+        set.payment = { total, paid: total, status: 'Lunas', paidAt: new Date() }
+      }
+      await db.collection('services').updateOne({ id: path[1] }, { $set: set })
       const updated = await db.collection('services').findOne({ id: path[1] })
       return json(clean(updated))
     }
@@ -587,9 +594,14 @@ async function handleRoute(request, { params }) {
       const sales = await db.collection('sales').find({ createdAt: { $gte: todayStart } }).toArray()
       const salesTotal = sales.reduce((s, x) => s + (x.total || 0), 0)
 
+      // Pendapatan service hari ini = service yang sudah diambil hari ini (dibayar)
+      const pickedToday = services.filter(s => s.status === 'SUDAH_DIAMBIL' && s.handover?.pickedUpAt && new Date(s.handover.pickedUpAt) >= todayStart)
+      const serviceRevenueToday = pickedToday.reduce((sum, s) => sum + (s.payment?.paid || 0), 0)
+
       const recent = await db.collection('services').find({}).sort({ createdAt: -1 }).limit(6).toArray()
 
       return json({
+        revenue: { todayService: serviceRevenueToday, todayServiceCount: pickedToday.length, todaySales: salesTotal, todayTotal: serviceRevenueToday + salesTotal },
         service: {
           active: active.length,
           waiting: byStatus('MENUNGGU'),
@@ -613,9 +625,12 @@ async function handleRoute(request, { params }) {
       const done = services.filter(s => ['SELESAI', 'SUDAH_DIAMBIL'].includes(s.status)).length
       const notDone = services.filter(s => !['SELESAI', 'SUDAH_DIAMBIL', 'BATAL'].includes(s.status)).length
       const unclaimed = services.filter(s => s.status === READY_STATUS).length
-      const revenue = services.filter(s => s.status !== 'BATAL').reduce((sum, s) => sum + (s.payment?.total || 0), 0)
-      const collected = services.filter(s => s.status !== 'BATAL').reduce((sum, s) => sum + (s.payment?.paid || 0), 0)
-      return json({ total: services.length, done, notDone, unclaimed, revenue, collected, services: services.map(clean) })
+      // Pendapatan terkumpul = service yang sudah selesai & diambil (dibayar) pada periode ini, berdasarkan tanggal pengambilan
+      const collectedServices = await db.collection('services')
+        .find({ status: 'SUDAH_DIAMBIL', 'handover.pickedUpAt': { $gte: start, $lte: end } })
+        .sort({ 'handover.pickedUpAt': -1 }).toArray()
+      const collected = collectedServices.reduce((sum, s) => sum + (s.payment?.paid || 0), 0)
+      return json({ total: services.length, done, notDone, unclaimed, collected, collectedCount: collectedServices.length, collectedServices: collectedServices.map(clean), services: services.map(clean) })
     }
     if (route === '/reports/sales' && method === 'GET') {
       const url = new URL(request.url)
