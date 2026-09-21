@@ -191,6 +191,21 @@ backend:
         -agent: "testing"
         -comment: "✅ ALL REVENUE FLOW TESTS PASSED (8/8): Handover auto-lunas working correctly - default markPaid sets payment.paid=total, status=Lunas, paidAt present. Dashboard revenue fields working - todayService increased by exactly 150000 after handover, todayServiceCount +1, todayTotal = todayService + todaySales. Reports services working - collected increased by 150000, collectedCount +1, collectedServices contains service with correct payment.paid. CRITICAL: 'revenue' field successfully removed from reports response (verified for both today and month periods). Negative case verified - markPaid=false keeps payment.paid=0, status=Belum Bayar, does NOT increase todayService or collected (collectedCount +1 acceptable as service is picked up). All exact numbers verified as per specification."
 
+  - task: "ESC/POS receipt bytes: GET /api/services/:id/escpos?width=58|80 dan GET /api/sales/:id/escpos?width=58|80 (lib/escpos.js) untuk printer thermal Bluetooth"
+    implemented: true
+    working: true
+    file: "/app/lib/escpos.js, /app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Mengembalikan {width, length, base64, preview}. base64 = byte ESC/POS mentah (mulai 1B 40 init, akhir 1D 56 42 00 cut). preview = teks nota tanpa kode kontrol; 58mm=32 kolom, 80mm=48 kolom. 404 jika id tidak ada."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL ESC/POS TESTS PASSED (6/6): Service ESC/POS 58mm - width='58', length=711 bytes, byte structure valid (starts with 1B 40, ends with 1D 56 42 00), preview contains serviceNumber, 'NOTA SERVICE', 'TOTAL', all lines <= 32 chars ✅. Service ESC/POS 80mm - width='80', all preview lines <= 48 chars ✅. Invalid width (100) correctly falls back to '58' ✅. Sale ESC/POS 58mm - width='58', byte structure valid, preview contains saleNumber, 'NOTA PENJUALAN', 'TOTAL', all lines <= 32 chars ✅. 404 handling - both service and sale endpoints correctly return 404 for non-existent IDs ✅. 401 handling - correctly returns 401 without auth token ✅. Sample preview verified: service receipt shows 'Ponsel Yen', service number SRV-260920-006, customer info, items with prices, TOTAL Rp50.000; sale receipt shows sale number SALE-260920-002, items, TOTAL Rp3.600.000. All ESC/POS receipt generation working perfectly for thermal Bluetooth printers."
+
 frontend:
   - task: "Full SPA (login, dashboard, service, inventory, sale, customer, report, setting, print nota)"
     implemented: true
@@ -217,8 +232,8 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 3
+  version: "1.2"
+  test_sequence: 4
   run_ui: false
 
 test_plan:
@@ -236,3 +251,8 @@ agent_communication:
     -message: "Iterasi 2: uji HANYA alur baru: (1) buat service + tambah item (servicePrice mis. 150000) -> payment.total=150000, paid=0; (2) GET /api/reports/services?period=today -> collected TIDAK bertambah dulu; GET /api/dashboard -> revenue.todayService belum bertambah; (3) POST /api/services/:id/handover {checklist:{},note:''} -> response status SUDAH_DIAMBIL, payment.paid=150000, payment.status='Lunas', handover.pickedUpAt ada; (4) GET dashboard -> revenue.todayService naik 150000, revenue.todayTotal = todayService + todaySales; (5) GET reports/services?period=today -> collected naik 150000, collectedCount naik, collectedServices berisi service tsb, field 'revenue' tidak ada lagi; (6) uji handover dgn markPaid:false pada service lain -> payment.paid tetap 0, tidak masuk collected. Jangan sentuh fitur lain."
     -agent: "testing"
     -message: "✅ REVENUE FLOW TESTING COMPLETE - ALL 8 TESTS PASSED (100% success). Verified complete flow: (1) Service creation with item: payment.total=150000, paid=0 ✅ (2) Dashboard revenue fields present and working: todayService, todayServiceCount, todaySales, todayTotal ✅ (3) Reports 'revenue' field successfully removed ✅ (4) Handover auto-lunas: status=SUDAH_DIAMBIL, payment.paid=150000, status=Lunas, paidAt and pickedUpAt present ✅ (5) Dashboard after handover: todayService increased by exactly 150000, todayServiceCount +1, todayTotal = todayService + todaySales ✅ (6) Reports after handover: collected increased by 150000, collectedCount +1, service in collectedServices with paid=150000 ✅ (7) Negative case markPaid=false: payment.paid=0, status=Belum Bayar, todayService and collected did NOT increase ✅ (8) Monthly report working with correct fields ✅. All exact numbers verified. Backend revenue flow fully functional."
+    -agent: "main"
+    -message: "Iterasi 3 (fitur cetak Bluetooth): uji HANYA endpoint escpos. (1) Login, ambil satu service id (GET /api/services) dan satu sale id (GET /api/sales; jika kosong buat sale dulu dgn inventory yang ada stok). (2) GET /api/services/:id/escpos?width=58 -> 200, field width='58', length>0, base64 valid; decode base64: byte awal harus 0x1B 0x40, byte akhir 0x1D 0x56 0x42 0x00; preview berisi serviceNumber, 'NOTA SERVICE', 'TOTAL', dan setiap baris preview <= 32 karakter. (3) width=80 -> width='80', baris preview <= 48 karakter. (4) width tidak valid (mis. 100) -> fallback '58'. (5) GET /api/sales/:id/escpos?width=58 -> preview berisi saleNumber, 'NOTA PENJUALAN', 'TOTAL'. (6) id tidak ada -> 404. (7) tanpa token -> 401. Jangan sentuh fitur lain."
+    -agent: "testing"
+    -message: "✅ ESC/POS RECEIPT TESTING COMPLETE - ALL 6 TESTS PASSED (100% success). Tested ONLY the new ESC/POS receipt endpoints as requested. Service ESC/POS 58mm: width='58', length=711 bytes, byte structure valid (starts 1B 40, ends 1D 56 42 00), preview contains serviceNumber 'SRV-260920-006', 'NOTA SERVICE', 'TOTAL', all lines <= 32 chars ✅. Service ESC/POS 80mm: width='80', all preview lines <= 48 chars ✅. Invalid width (100) correctly falls back to '58' ✅. Sale ESC/POS 58mm: width='58', byte structure valid, preview contains saleNumber 'SALE-260920-002', 'NOTA PENJUALAN', 'TOTAL', all lines <= 32 chars ✅. 404 handling: both endpoints correctly return 404 for non-existent IDs ✅. 401 handling: correctly returns 401 without auth token ✅. Sample previews verified showing shop name 'Ponsel Yen', customer info, items with prices, totals. All ESC/POS receipt generation working perfectly for thermal Bluetooth printers. No other features tested or modified."
+

@@ -929,7 +929,7 @@ function MovementSheet({ token, item, onOpenChange }) {
 }
 
 // ---------------- Sales ----------------
-function SaleList({ token }) {
+function SaleList({ token, onPrint }) {
   const [sales, setSales] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
@@ -949,9 +949,12 @@ function SaleList({ token }) {
           {sales.length === 0 && <EmptyState text="Belum ada penjualan." />}
           {sales.map((s) => (
             <Card key={s.id}><CardContent className="p-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="font-semibold text-sm">{s.saleNumber}</div>
-                <div className="font-bold">{rupiah(s.total)}</div>
+                <div className="flex items-center gap-2">
+                  <div className="font-bold">{rupiah(s.total)}</div>
+                  {onPrint && <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => onPrint(s)} aria-label="Cetak nota" data-testid="sale-print-btn"><Printer className="h-4 w-4" /></Button>}
+                </div>
               </div>
               <div className="text-xs text-muted-foreground">{formatDateTime(s.createdAt)}</div>
               <div className="text-xs text-muted-foreground mt-1">{s.items.map((i) => `${i.name} ×${i.qty}`).join(', ')}</div>
@@ -1300,6 +1303,48 @@ function Receipt({ service, settings, width }) {
   )
 }
 
+function SaleReceipt({ sale, settings, width }) {
+  const s = sale
+  return (
+    <div id="print-receipt" style={{ width: width === '58' ? '58mm' : '80mm' }}>
+      <style>{`
+        #print-receipt{position:absolute;left:-9999px;top:0;background:#fff;color:#000;padding:6px;font-family:'Courier New',monospace;font-size:${width === '58' ? '10px' : '11px'};line-height:1.4}
+        #print-receipt .c{text-align:center}
+        #print-receipt .b{font-weight:bold}
+        #print-receipt hr{border:none;border-top:1px dashed #000;margin:4px 0}
+        #print-receipt table{width:100%;border-collapse:collapse}
+        #print-receipt td{vertical-align:top;padding:1px 0}
+        #print-receipt .r{text-align:right}
+        @media print{
+          body *{visibility:hidden !important}
+          #print-receipt,#print-receipt *{visibility:visible !important}
+          #print-receipt{left:0 !important;position:absolute !important}
+          @page{margin:0}
+        }
+      `}</style>
+      <div className="c b" style={{ fontSize: width === '58' ? '13px' : '15px' }}>{settings?.shopName || 'Konter Ponsel'}</div>
+      {settings?.address && <div className="c">{settings.address}</div>}
+      {settings?.phone && <div className="c">{settings.phone}</div>}
+      <hr />
+      <table><tbody>
+        <tr><td>No.</td><td className="r b">{s.saleNumber}</td></tr>
+        <tr><td>Tanggal</td><td className="r">{formatDateTime(s.createdAt)}</td></tr>
+      </tbody></table>
+      <hr />
+      <table><tbody>
+        {(s.items || []).map((it, i) => (
+          <tr key={i}><td>{it.name} <span style={{ whiteSpace: 'nowrap' }}>{it.qty} x {rupiah(it.price)}</span></td><td className="r">{rupiah((it.qty || 0) * (it.price || 0))}</td></tr>
+        ))}
+      </tbody></table>
+      <hr />
+      <table><tbody><tr><td className="b">TOTAL</td><td className="r b">{rupiah(s.total)}</td></tr></tbody></table>
+      <hr />
+      <div className="c">Terima kasih atas kunjungan Anda.</div>
+      {settings?.receiptFooter && <div className="c" style={{ marginTop: 4 }}>{settings.receiptFooter}</div>}
+    </div>
+  )
+}
+
 // ---------------- shared UI ----------------
 function Loading() { return <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div> }
 function EmptyState({ text }) { return <div className="text-center py-8 text-sm text-muted-foreground">{text}</div> }
@@ -1365,6 +1410,142 @@ function Shell({ me, settings, tab, go, onLogout, children }) {
   )
 }
 
+// ---------------- Printing helpers (Bluetooth thermal) ----------------
+const BT_SERVICES = [
+  '000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+  '0000ff00-0000-1000-8000-00805f9b34fb', '0000ffe0-0000-1000-8000-00805f9b34fb', '0000ae30-0000-1000-8000-00805f9b34fb',
+  '0000fff0-0000-1000-8000-00805f9b34fb', '0000ff12-0000-1000-8000-00805f9b34fb',
+]
+let btDevice = null
+let btChar = null
+function b64ToBytes(b64) { const bin = atob(b64); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out }
+
+async function btConnect(onStatus) {
+  if (typeof navigator === 'undefined' || !navigator.bluetooth) throw new Error('Browser ini tidak mendukung Web Bluetooth. Gunakan Chrome di Android/Windows, atau pakai cara RawBT.')
+  if (!btDevice) {
+    onStatus('Pilih printer dari daftar...')
+    btDevice = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BT_SERVICES })
+    btDevice.addEventListener('gattserverdisconnected', () => { btChar = null })
+  }
+  if (!btChar || !btDevice.gatt.connected) {
+    onStatus(`Menghubungkan ke ${btDevice.name || 'printer'}...`)
+    const server = await btDevice.gatt.connect()
+    const services = await server.getPrimaryServices()
+    btChar = null
+    for (const svc of services) {
+      const chars = await svc.getCharacteristics()
+      const c = chars.find((x) => x.properties.writeWithoutResponse) || chars.find((x) => x.properties.write)
+      if (c) { btChar = c; break }
+    }
+    if (!btChar) { try { btDevice.gatt.disconnect() } catch {} ; btDevice = null; throw new Error('Printer tidak punya jalur tulis Bluetooth LE (kemungkinan hanya Bluetooth klasik). Gunakan cara RawBT.') }
+  }
+  return btChar
+}
+
+async function btPrint(bytes, onStatus) {
+  const ch = await btConnect(onStatus)
+  onStatus('Mengirim data ke printer...')
+  const CHUNK = 100
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const part = bytes.slice(i, i + CHUNK)
+    if (ch.properties.writeWithoutResponse) await ch.writeValueWithoutResponse(part)
+    else await ch.writeValue(part)
+    await new Promise((r) => setTimeout(r, 40))
+  }
+}
+
+function rawbtPrint(b64) {
+  const fallback = encodeURIComponent('https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter')
+  const isAndroid = /android/i.test(navigator.userAgent)
+  if (isAndroid) window.location.href = `intent:base64,${b64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=${fallback};end`
+  else window.location.href = `rawbt:base64,${b64}`
+}
+
+function PrintDialog({ target, token, onClose, onBrowserPrint }) {
+  const [width, setWidth] = useState(() => (typeof window !== 'undefined' && localStorage.getItem('konter_print_width')) || '58')
+  const [data, setData] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+  const [showPreview, setShowPreview] = useState(false)
+  const hasBt = typeof navigator !== 'undefined' && !!navigator.bluetooth
+  const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+
+  useEffect(() => {
+    if (!target) return
+    setData(null)
+    const path = target.kind === 'sale' ? `/sales/${target.data.id}/escpos?width=${width}` : `/services/${target.data.id}/escpos?width=${width}`
+    api(path, { token }).then(setData).catch(() => toast.error('Gagal menyiapkan data nota.'))
+  }, [target, width, token])
+
+  const pickWidth = (w) => { setWidth(w); localStorage.setItem('konter_print_width', w) }
+
+  const doBt = async () => {
+    if (!data) return
+    setBusy(true)
+    try {
+      await btPrint(b64ToBytes(data.base64), setStatus)
+      toast.success('Nota terkirim ke printer.')
+      onClose()
+    } catch (err) {
+      if (err?.name === 'NotFoundError') toast.info('Pemilihan printer dibatalkan.')
+      else { toast.error(err?.message || 'Gagal mencetak via Bluetooth.'); if (!btChar) btDevice = null }
+    } finally { setBusy(false); setStatus('') }
+  }
+  const doRawbt = () => { if (!data) return; rawbtPrint(data.base64); toast.info('Membuka RawBT...') }
+  const disconnectBt = () => { try { btDevice?.gatt?.disconnect() } catch {} ; btDevice = null; btChar = null; toast.success('Printer Bluetooth dilepas. Pilih ulang saat cetak berikutnya.') }
+
+  return (
+    <Dialog open={!!target} onOpenChange={(v) => !v && !busy && onClose()}>
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-md max-h-[92vh] overflow-y-auto rounded-lg p-4 sm:p-6" data-testid="print-dialog">
+        <DialogHeader><DialogTitle>Cetak Nota {target?.kind === 'sale' ? 'Penjualan' : 'Service'}</DialogTitle></DialogHeader>
+        <div className="space-y-4 min-w-0 max-w-full overflow-hidden">
+          <div className="space-y-1.5">
+            <Label>Ukuran kertas</Label>
+            <div className="flex gap-2">
+              <Button className="flex-1" variant={width === '58' ? 'default' : 'outline'} onClick={() => pickWidth('58')}>58mm</Button>
+              <Button className="flex-1" variant={width === '80' ? 'default' : 'outline'} onClick={() => pickWidth('80')}>80mm</Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Cara cetak</Label>
+            <Button className="w-full justify-start h-auto py-3 whitespace-normal min-w-0" onClick={doRawbt} disabled={!data || busy} data-testid="print-rawbt">
+              <Printer className="h-5 w-5 mr-3 shrink-0" />
+              <span className="text-left min-w-0"><span className="block font-semibold">Printer Bluetooth via RawBT</span><span className="block text-xs opacity-80 font-normal">Cara paling andal untuk RPP02N &amp; printer 58mm Bluetooth (aplikasi gratis)</span></span>
+            </Button>
+            <Button className="w-full justify-start h-auto py-3 whitespace-normal min-w-0" variant="outline" onClick={doBt} disabled={!data || busy || !hasBt} data-testid="print-bluetooth">
+              {busy ? <Loader2 className="h-5 w-5 mr-3 animate-spin shrink-0" /> : <Smartphone className="h-5 w-5 mr-3 shrink-0" />}
+              <span className="text-left"><span className="block font-semibold">Bluetooth langsung (Web Bluetooth)</span><span className="block text-xs text-muted-foreground font-normal">{hasBt ? (busy && status ? status : 'Tanpa aplikasi tambahan. Hanya untuk printer yang mendukung Bluetooth LE.') : 'Tidak didukung browser ini (pakai Chrome Android/Windows).'}</span></span>
+            </Button>
+            <Button className="w-full justify-start h-auto py-3 whitespace-normal min-w-0" variant="outline" onClick={() => onBrowserPrint(width)} disabled={busy} data-testid="print-browser">
+              <FileBarChart className="h-5 w-5 mr-3 shrink-0" />
+              <span className="text-left"><span className="block font-semibold">Print browser (laptop / printer USB / WiFi)</span><span className="block text-xs text-muted-foreground font-normal">Membuka dialog print biasa.</span></span>
+            </Button>
+          </div>
+
+          {isAndroid && (
+            <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+              <div className="font-semibold text-foreground">Setting sekali saja untuk RawBT:</div>
+              <div>1. Install <b>RawBT</b> dari Play Store (gratis).</div>
+              <div>2. Pairing printer di Bluetooth HP (PIN biasanya 0000 / 1234).</div>
+              <div>3. Buka RawBT → Settings → Connection: <b>Bluetooth</b> → pilih printer → Paper width <b>58mm</b>.</div>
+              <div>4. Kembali ke sini, tekan tombol RawBT di atas. Selanjutnya cukup 1 ketukan.</div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" size="sm" onClick={() => setShowPreview((v) => !v)}>{showPreview ? 'Sembunyikan' : 'Lihat'} pratinjau</Button>
+            {btDevice && <Button variant="ghost" size="sm" className="text-red-500" onClick={disconnectBt}>Lepas printer BT</Button>}
+          </div>
+          {showPreview && (
+            <pre className="text-[10px] leading-tight bg-white text-black border rounded p-2 overflow-x-auto font-mono w-full max-w-full" data-testid="print-preview">{data ? data.preview : 'Menyiapkan...'}</pre>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ---------------- Root App ----------------
 function App() {
   const [token, setToken] = useState(null)
@@ -1396,8 +1577,9 @@ function App() {
   const onLogin = (t, u) => { localStorage.setItem('konter_token', t); setToken(t); setMe(u) }
   const onLogout = () => { localStorage.removeItem('konter_token'); setToken(null); setMe(null); go('dashboard') }
 
-  const askPrint = (svc) => setPrintAsk(svc)
-  const doPrint = (svc, w) => { setPrintWidth(w); setPrintAsk(null); setPrintService(svc); setTimeout(() => window.print(), 250) }
+  const askPrint = (svc) => setPrintAsk({ kind: 'service', data: svc })
+  const askPrintSale = (sale) => setPrintAsk({ kind: 'sale', data: sale })
+  const doBrowserPrint = (w) => { const t = printAsk; setPrintWidth(w); setPrintAsk(null); setPrintService(t); setTimeout(() => window.print(), 300) }
 
   if (!ready) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
   if (!token) return (<><LoginScreen onLogin={onLogin} /><Toaster richColors position="top-center" /></>)
@@ -1408,7 +1590,7 @@ function App() {
   else if (tab === 'service') content = <ServiceList token={token} go={go} initial={params} />
   else if (tab === 'service-detail') content = <ServiceDetail token={token} id={params.id} go={go} onPrint={askPrint} />
   else if (tab === 'inventory') content = <InventoryList token={token} initial={params} />
-  else if (tab === 'sale') content = <SaleList token={token} />
+  else if (tab === 'sale') content = <SaleList token={token} onPrint={askPrintSale} />
   else if (tab === 'customer') content = <CustomerList token={token} go={go} />
   else if (tab === 'customer-detail') content = <CustomerDetail token={token} id={params.id} go={go} />
   else if (tab === 'report') content = <Reports token={token} />
@@ -1418,17 +1600,10 @@ function App() {
   return (
     <>
       <Shell me={me} settings={settings} tab={shellTab} go={go} onLogout={onLogout}>{content}</Shell>
-      {printService && <Receipt service={printService} settings={settings} width={printWidth} />}
-      <Dialog open={!!printAsk} onOpenChange={(v) => !v && setPrintAsk(null)}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-xs rounded-lg p-4 sm:p-6">
-          <DialogHeader><DialogTitle>Cetak Nota</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">Pilih ukuran kertas thermal:</p>
-          <div className="flex gap-3">
-            <Button className="flex-1" variant="outline" onClick={() => doPrint(printAsk, '58')}>58mm</Button>
-            <Button className="flex-1" onClick={() => doPrint(printAsk, '80')}>80mm</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {printService && (printService.kind === 'sale'
+        ? <SaleReceipt sale={printService.data} settings={settings} width={printWidth} />
+        : <Receipt service={printService.data} settings={settings} width={printWidth} />)}
+      <PrintDialog target={printAsk} token={token} onClose={() => setPrintAsk(null)} onBrowserPrint={doBrowserPrint} />
       <Toaster richColors position="top-center" />
     </>
   )

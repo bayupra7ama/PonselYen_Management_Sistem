@@ -2,6 +2,7 @@ import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { buildServiceReceipt, buildSaleReceipt, bytesToPreview, toBase64 } from '@/lib/escpos'
 
 // ---------- MongoDB ----------
 let client
@@ -439,6 +440,17 @@ async function handleRoute(request, { params }) {
       return json(clean(updated))
     }
 
+    // ESC/POS bytes untuk printer thermal Bluetooth (nota service)
+    if (path[0] === 'services' && path[1] && path[2] === 'escpos' && method === 'GET') {
+      const url = new URL(request.url)
+      const width = url.searchParams.get('width') === '80' ? '80' : '58'
+      const s = await db.collection('services').findOne({ id: path[1] })
+      if (!s) return json({ error: 'Data tidak ditemukan.' }, 404)
+      const settings = (await db.collection('settings').findOne({ id: 'main' })) || {}
+      const bytes = buildServiceReceipt(s, settings, width)
+      return json({ width, length: bytes.length, base64: toBase64(bytes), preview: bytesToPreview(bytes) })
+    }
+
     // Handover (serahkan HP)
     if (path[0] === 'services' && path[1] && path[2] === 'handover' && method === 'POST') {
       const body = await request.json()
@@ -547,6 +559,15 @@ async function handleRoute(request, { params }) {
     if (route === '/sales' && method === 'GET') {
       const sales = await db.collection('sales').find({}).sort({ createdAt: -1 }).limit(500).toArray()
       return json(sales.map(clean))
+    }
+    if (path[0] === 'sales' && path[1] && path[2] === 'escpos' && method === 'GET') {
+      const url = new URL(request.url)
+      const width = url.searchParams.get('width') === '80' ? '80' : '58'
+      const s = await db.collection('sales').findOne({ id: path[1] })
+      if (!s) return json({ error: 'Data tidak ditemukan.' }, 404)
+      const settings = (await db.collection('settings').findOne({ id: 'main' })) || {}
+      const bytes = buildSaleReceipt(s, settings, width)
+      return json({ width, length: bytes.length, base64: toBase64(bytes), preview: bytesToPreview(bytes) })
     }
     if (route === '/sales' && method === 'POST') {
       const body = await request.json()
