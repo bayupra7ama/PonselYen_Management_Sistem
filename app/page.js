@@ -319,9 +319,7 @@ function NewServiceDialog({ token, open, onOpenChange, onCreated }) {
   }
   const [f, setF] = useState(empty)
   const [saving, setSaving] = useState(false)
-  const [showExtra, setShowExtra] = useState(false)
-
-  useEffect(() => { if (open) { setF(empty); setShowExtra(false) } }, [open])
+  useEffect(() => { if (open) setF(empty) }, [open])
 
   const setCond = (k, v) => setF((p) => ({ ...p, condition: { ...p.condition, [k]: v } }))
 
@@ -380,40 +378,29 @@ function NewServiceDialog({ token, open, onOpenChange, onCreated }) {
           </div>
           <div className="space-y-1.5"><Label>Keluhan *</Label><Textarea value={f.complaint} onChange={(e) => setF({ ...f, complaint: e.target.value })} placeholder="Layar pecah" rows={2} /></div>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => setShowExtra((v) => !v)}
-          >
-            {showExtra ? 'Sembunyikan Kondisi Tambahan' : 'Kondisi Tambahan (opsional)'}
-          </Button>
-
-          {showExtra && (
-            <div className="space-y-4 rounded-lg border p-3 bg-muted/20">
-              <SectionLabel>Kondisi Saat Diterima</SectionLabel>
-              <div className="grid grid-cols-1 gap-3">
-                <CondRow label="SIM Card"><ToggleField value={f.condition.simCard} onChange={(v) => setCond('simCard', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
-                <CondRow label="SD Card"><ToggleField value={f.condition.sdCard} onChange={(v) => setCond('sdCard', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
-                <CondRow label="Silikon/Casing"><ToggleField value={f.condition.casing} onChange={(v) => setCond('casing', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
-                <CondRow label="Tombol Power"><ToggleField value={f.condition.powerButton} onChange={(v) => setCond('powerButton', v)} options={['Normal', 'Rusak']} /></CondRow>
-                <CondRow label="Volume Up"><ToggleField value={f.condition.volumeUp} onChange={(v) => setCond('volumeUp', v)} options={['Normal', 'Rusak']} /></CondRow>
-                <CondRow label="Volume Down"><ToggleField value={f.condition.volumeDown} onChange={(v) => setCond('volumeDown', v)} options={['Normal', 'Rusak']} /></CondRow>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Catatan Tambahan</Label>
-                <Textarea value={f.condition.note} onChange={(e) => setCond('note', e.target.value)} placeholder="LCD retak bagian kanan / barang lain yang ditinggalkan" rows={2} />
-              </div>
-
-              <SectionLabel>Diantar Oleh</SectionLabel>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <ToggleField value={f.deliveredBy.type === 'owner' ? 'Pemilik' : 'Orang Lain'} onChange={(v) => setF({ ...f, deliveredBy: { ...f.deliveredBy, type: v === 'Pemilik' ? 'owner' : 'other' } })} options={['Pemilik', 'Orang Lain']} />
-                {f.deliveredBy.type === 'other' && (
-                  <Input className="flex-1" value={f.deliveredBy.name} onChange={(e) => setF({ ...f, deliveredBy: { ...f.deliveredBy, name: e.target.value } })} placeholder="Nama pengantar" />
-                )}
-              </div>
+          <div className="space-y-4 rounded-lg border p-3 bg-muted/20">
+            <SectionLabel>Kondisi Saat Diterima</SectionLabel>
+            <div className="grid grid-cols-1 gap-3">
+              <CondRow label="SIM Card"><ToggleField value={f.condition.simCard} onChange={(v) => setCond('simCard', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
+              <CondRow label="SD Card"><ToggleField value={f.condition.sdCard} onChange={(v) => setCond('sdCard', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
+              <CondRow label="Silikon/Casing"><ToggleField value={f.condition.casing} onChange={(v) => setCond('casing', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
+              <CondRow label="Tombol Power"><ToggleField value={f.condition.powerButton} onChange={(v) => setCond('powerButton', v)} options={['Normal', 'Rusak']} /></CondRow>
+              <CondRow label="Volume Up"><ToggleField value={f.condition.volumeUp} onChange={(v) => setCond('volumeUp', v)} options={['Normal', 'Rusak']} /></CondRow>
+              <CondRow label="Volume Down"><ToggleField value={f.condition.volumeDown} onChange={(v) => setCond('volumeDown', v)} options={['Normal', 'Rusak']} /></CondRow>
             </div>
-          )}
+            <div className="space-y-1.5">
+              <Label>Catatan Tambahan</Label>
+              <Textarea value={f.condition.note} onChange={(e) => setCond('note', e.target.value)} placeholder="LCD retak bagian kanan / barang lain yang ditinggalkan" rows={2} />
+            </div>
+
+            <SectionLabel>Diantar Oleh</SectionLabel>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <ToggleField value={f.deliveredBy.type === 'owner' ? 'Pemilik' : 'Orang Lain'} onChange={(v) => setF({ ...f, deliveredBy: { ...f.deliveredBy, type: v === 'Pemilik' ? 'owner' : 'other' } })} options={['Pemilik', 'Orang Lain']} />
+              {f.deliveredBy.type === 'other' && (
+                <Input className="flex-1" value={f.deliveredBy.name} onChange={(e) => setF({ ...f, deliveredBy: { ...f.deliveredBy, name: e.target.value } })} placeholder="Nama pengantar" />
+              )}
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Batal</Button>
