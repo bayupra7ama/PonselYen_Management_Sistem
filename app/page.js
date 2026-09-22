@@ -1325,54 +1325,88 @@ function SettingsView({ token, settings, onSaved }) {
 }
 
 // ---------------- Receipt (print) ----------------
-function Receipt({ service, settings, width }) {
-  const s = service; const sisa = (s.payment?.total || 0) - (s.payment?.paid || 0)
+function Receipt({ service, settings }) {
+  const s = service
+  const c = s.condition || {}
+  const sisa = (s.payment?.total || 0) - (s.payment?.paid || 0)
+  const deliveredBy = s.deliveredBy?.type === 'other' ? `Orang lain: ${s.deliveredBy?.name || '-'}` : 'Pemilik'
+
   return (
-    <div id="print-receipt" style={{ width: width === '58' ? '58mm' : '80mm' }}>
+    <div id="print-receipt" style={{ width: '58mm' }}>
       <style>{`
-        #print-receipt{position:absolute;left:-9999px;top:0;background:#fff;color:#000;padding:6px;font-family:'Courier New',monospace;font-size:${width === '58' ? '10px' : '11px'};line-height:1.4}
+        #print-receipt{position:absolute;left:-9999px;top:0;background:#fff;color:#000;padding:5px;font-family:'Courier New',monospace;font-size:10px;line-height:1.35}
         #print-receipt .c{text-align:center}
         #print-receipt .b{font-weight:bold}
+        #print-receipt .section{font-weight:bold;margin-top:2px}
         #print-receipt hr{border:none;border-top:1px dashed #000;margin:4px 0}
         #print-receipt table{width:100%;border-collapse:collapse}
         #print-receipt td{vertical-align:top;padding:1px 0}
+        #print-receipt td:first-child{padding-right:5px}
         #print-receipt .r{text-align:right}
+        #print-receipt .wrap{text-align:left;word-break:break-word}
         @media print{
           body *{visibility:hidden !important}
           #print-receipt,#print-receipt *{visibility:visible !important}
-          #print-receipt{left:0 !important;position:absolute !important}
-          @page{margin:0}
+          #print-receipt{left:0 !important;position:absolute !important;width:58mm !important}
+          @page{size:58mm auto;margin:0}
         }
       `}</style>
-      <div className="c b" style={{ fontSize: width === '58' ? '13px' : '15px' }}>{settings?.shopName || 'Konter Ponsel'}</div>
+
+      <div className="c b" style={{ fontSize: '13px' }}>{settings?.shopName || 'Konter Ponsel'}</div>
       {settings?.address && <div className="c">{settings.address}</div>}
       {settings?.phone && <div className="c">{settings.phone}</div>}
+
       <hr />
-      <table>
-        <tbody>
-          <tr><td>No.</td><td className="r b">{s.serviceNumber}</td></tr>
-          <tr><td>Tanggal</td><td className="r">{formatDate(s.createdAt)}</td></tr>
-          <tr><td>Pelanggan</td><td className="r">{s.customerName}</td></tr>
-          {s.customerPhone && <tr><td>No. HP</td><td className="r">{s.customerPhone}</td></tr>}
-          <tr><td>HP</td><td className="r">{s.brand} {s.model}</td></tr>
-          <tr><td>Keluhan</td><td className="r">{s.complaint}</td></tr>
-          <tr><td>Status</td><td className="r">{statusLabel(s.status)}</td></tr>
-        </tbody>
-      </table>
+      <div className="c b">NOTA SERVICE</div>
+      <hr />
+
+      <table><tbody>
+        <tr><td>No. Service</td><td className="r b">{s.serviceNumber}</td></tr>
+        <tr><td>Tanggal</td><td className="r">{formatDateTime(s.createdAt)}</td></tr>
+        <tr><td>Pelanggan</td><td className="r">{s.customerName}</td></tr>
+        {s.customerPhone && <tr><td>No. HP</td><td className="r">{s.customerPhone}</td></tr>}
+        <tr><td>Perangkat</td><td className="r">{s.brand} {s.model}</td></tr>
+        <tr><td>Status</td><td className="r">{statusLabel(s.status)}</td></tr>
+        <tr><td>Diantar</td><td className="r">{deliveredBy}</td></tr>
+      </tbody></table>
+
+      <hr />
+      <div className="section">KELUHAN</div>
+      <div className="wrap">{s.complaint || '-'}</div>
+
+      <hr />
+      <div className="section">KONDISI SAAT DITERIMA</div>
+      <table><tbody>
+        <tr><td>SIM Card</td><td className="r">{c.simCard || '-'}</td></tr>
+        <tr><td>SD Card</td><td className="r">{c.sdCard || '-'}</td></tr>
+        <tr><td>Casing</td><td className="r">{c.casing || '-'}</td></tr>
+        <tr><td>Power</td><td className="r">{c.powerButton || '-'}</td></tr>
+        <tr><td>Volume +</td><td className="r">{c.volumeUp || '-'}</td></tr>
+        <tr><td>Volume -</td><td className="r">{c.volumeDown || '-'}</td></tr>
+      </tbody></table>
+      {c.note && <div className="wrap">Catatan: {c.note}</div>}
+
       {(s.items && s.items.length > 0) && (<>
         <hr />
+        <div className="section">PEKERJAAN / BIAYA</div>
         <table><tbody>
           {s.items.map((it) => (
-            <tr key={it.id}><td>{it.description}{it.qty > 1 ? ` x${it.qty}` : ''}</td><td className="r">{rupiah(it.total)}</td></tr>
+            <tr key={it.id}>
+              <td className="wrap">{it.description || it.sparepartName || 'Item'}{it.qty > 1 ? ` x${it.qty}` : ''}</td>
+              <td className="r">{rupiah(it.total)}</td>
+            </tr>
           ))}
         </tbody></table>
       </>)}
+
       <hr />
       <table><tbody>
         <tr><td className="b">TOTAL</td><td className="r b">{rupiah(s.payment?.total)}</td></tr>
         <tr><td>Dibayar</td><td className="r">{rupiah(s.payment?.paid)}</td></tr>
         <tr><td>Sisa</td><td className="r">{rupiah(sisa)}</td></tr>
+        <tr><td>Status Bayar</td><td className="r">{s.payment?.status || '-'}</td></tr>
       </tbody></table>
+
       <hr />
       <div className="c">Simpan nota ini dan tunjukkan saat pengambilan perangkat.</div>
       {settings?.receiptFooter && <div className="c" style={{ marginTop: 4 }}>{settings.receiptFooter}</div>}
@@ -1380,12 +1414,12 @@ function Receipt({ service, settings, width }) {
   )
 }
 
-function SaleReceipt({ sale, settings, width }) {
+function SaleReceipt({ sale, settings }) {
   const s = sale
   return (
-    <div id="print-receipt" style={{ width: width === '58' ? '58mm' : '80mm' }}>
+    <div id="print-receipt" style={{ width: '58mm' }}>
       <style>{`
-        #print-receipt{position:absolute;left:-9999px;top:0;background:#fff;color:#000;padding:6px;font-family:'Courier New',monospace;font-size:${width === '58' ? '10px' : '11px'};line-height:1.4}
+        #print-receipt{position:absolute;left:-9999px;top:0;background:#fff;color:#000;padding:5px;font-family:'Courier New',monospace;font-size:10px;line-height:1.35}
         #print-receipt .c{text-align:center}
         #print-receipt .b{font-weight:bold}
         #print-receipt hr{border:none;border-top:1px dashed #000;margin:4px 0}
@@ -1395,13 +1429,15 @@ function SaleReceipt({ sale, settings, width }) {
         @media print{
           body *{visibility:hidden !important}
           #print-receipt,#print-receipt *{visibility:visible !important}
-          #print-receipt{left:0 !important;position:absolute !important}
-          @page{margin:0}
+          #print-receipt{left:0 !important;position:absolute !important;width:58mm !important}
+          @page{size:58mm auto;margin:0}
         }
       `}</style>
-      <div className="c b" style={{ fontSize: width === '58' ? '13px' : '15px' }}>{settings?.shopName || 'Konter Ponsel'}</div>
+      <div className="c b" style={{ fontSize: '13px' }}>{settings?.shopName || 'Konter Ponsel'}</div>
       {settings?.address && <div className="c">{settings.address}</div>}
       {settings?.phone && <div className="c">{settings.phone}</div>}
+      <hr />
+      <div className="c b">NOTA PENJUALAN</div>
       <hr />
       <table><tbody>
         <tr><td>No.</td><td className="r b">{s.saleNumber}</td></tr>
@@ -1410,7 +1446,10 @@ function SaleReceipt({ sale, settings, width }) {
       <hr />
       <table><tbody>
         {(s.items || []).map((it, i) => (
-          <tr key={i}><td>{it.name} <span style={{ whiteSpace: 'nowrap' }}>{it.qty} x {rupiah(it.price)}</span></td><td className="r">{rupiah((it.qty || 0) * (it.price || 0))}</td></tr>
+          <tr key={i}>
+            <td>{it.name}<br />{it.qty} x {rupiah(it.price)}</td>
+            <td className="r">{rupiah((it.qty || 0) * (it.price || 0))}</td>
+          </tr>
         ))}
       </tbody></table>
       <hr />
@@ -1539,7 +1578,6 @@ function rawbtPrint(b64) {
 }
 
 function PrintDialog({ target, token, onClose, onBrowserPrint }) {
-  const [width, setWidth] = useState(() => (typeof window !== 'undefined' && localStorage.getItem('konter_print_width')) || '58')
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
@@ -1550,11 +1588,9 @@ function PrintDialog({ target, token, onClose, onBrowserPrint }) {
   useEffect(() => {
     if (!target) return
     setData(null)
-    const path = target.kind === 'sale' ? `/sales/${target.data.id}/escpos?width=${width}` : `/services/${target.data.id}/escpos?width=${width}`
+    const path = target.kind === 'sale' ? `/sales/${target.data.id}/escpos` : `/services/${target.data.id}/escpos`
     api(path, { token }).then(setData).catch(() => toast.error('Gagal menyiapkan data nota.'))
-  }, [target, width, token])
-
-  const pickWidth = (w) => { setWidth(w); localStorage.setItem('konter_print_width', w) }
+  }, [target, token])
 
   const doBt = async () => {
     if (!data) return
@@ -1576,14 +1612,6 @@ function PrintDialog({ target, token, onClose, onBrowserPrint }) {
       <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-md max-h-[92vh] overflow-y-auto rounded-lg p-4 sm:p-6" data-testid="print-dialog">
         <DialogHeader><DialogTitle>Cetak Nota {target?.kind === 'sale' ? 'Penjualan' : 'Service'}</DialogTitle></DialogHeader>
         <div className="space-y-4 min-w-0 max-w-full overflow-hidden">
-          <div className="space-y-1.5">
-            <Label>Ukuran kertas</Label>
-            <div className="flex gap-2">
-              <Button className="flex-1" variant={width === '58' ? 'default' : 'outline'} onClick={() => pickWidth('58')}>58mm</Button>
-              <Button className="flex-1" variant={width === '80' ? 'default' : 'outline'} onClick={() => pickWidth('80')}>80mm</Button>
-            </div>
-          </div>
-
           <div className="space-y-2">
             <Label>Cara cetak</Label>
             <Button className="w-full justify-start h-auto py-3 whitespace-normal min-w-0" onClick={doRawbt} disabled={!data || busy} data-testid="print-rawbt">
@@ -1594,7 +1622,7 @@ function PrintDialog({ target, token, onClose, onBrowserPrint }) {
               {busy ? <Loader2 className="h-5 w-5 mr-3 animate-spin shrink-0" /> : <Smartphone className="h-5 w-5 mr-3 shrink-0" />}
               <span className="text-left"><span className="block font-semibold">Bluetooth langsung (Web Bluetooth)</span><span className="block text-xs text-muted-foreground font-normal">{hasBt ? (busy && status ? status : 'Tanpa aplikasi tambahan. Hanya untuk printer yang mendukung Bluetooth LE.') : 'Tidak didukung browser ini (pakai Chrome Android/Windows).'}</span></span>
             </Button>
-            <Button className="w-full justify-start h-auto py-3 whitespace-normal min-w-0" variant="outline" onClick={() => onBrowserPrint(width)} disabled={busy} data-testid="print-browser">
+            <Button className="w-full justify-start h-auto py-3 whitespace-normal min-w-0" variant="outline" onClick={onBrowserPrint} disabled={busy} data-testid="print-browser">
               <FileBarChart className="h-5 w-5 mr-3 shrink-0" />
               <span className="text-left"><span className="block font-semibold">Print browser (laptop / printer USB / WiFi)</span><span className="block text-xs text-muted-foreground font-normal">Membuka dialog print biasa.</span></span>
             </Button>
@@ -1679,7 +1707,6 @@ function App() {
   const [settings, setSettings] = useState(null)
   const [nav, setNav] = useState({ tab: 'dashboard', params: {} })
   const [printService, setPrintService] = useState(null)
-  const [printWidth, setPrintWidth] = useState('80')
   const [printAsk, setPrintAsk] = useState(null)
 
   const go = (tab, params = {}) => setNav({ tab, params })
@@ -1704,7 +1731,7 @@ function App() {
 
   const askPrint = (svc) => setPrintAsk({ kind: 'service', data: svc })
   const askPrintSale = (sale) => setPrintAsk({ kind: 'sale', data: sale })
-  const doBrowserPrint = (w) => { const t = printAsk; setPrintWidth(w); setPrintAsk(null); setPrintService(t); setTimeout(() => window.print(), 300) }
+  const doBrowserPrint = () => { const t = printAsk; setPrintAsk(null); setPrintService(t); setTimeout(() => window.print(), 300) }
 
   if (!ready) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
   if (!token) return (<><LoginScreen onLogin={onLogin} /><GlobalApiLoading /><Toaster richColors position="top-center" /></>)
@@ -1726,8 +1753,8 @@ function App() {
     <>
       <Shell me={me} settings={settings} tab={shellTab} go={go} onLogout={onLogout}>{content}</Shell>
       {printService && (printService.kind === 'sale'
-        ? <SaleReceipt sale={printService.data} settings={settings} width={printWidth} />
-        : <Receipt service={printService.data} settings={settings} width={printWidth} />)}
+        ? <SaleReceipt sale={printService.data} settings={settings} />
+        : <Receipt service={printService.data} settings={settings} />)}
       <PrintDialog target={printAsk} token={token} onClose={() => setPrintAsk(null)} onBrowserPrint={doBrowserPrint} />
       <GlobalApiLoading />
       <Toaster richColors position="top-center" />
