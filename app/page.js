@@ -25,6 +25,9 @@ import {
 } from 'lucide-react'
 import { api, rupiah, formatDate, formatDateTime, daysWaiting, STATUSES, statusLabel, statusCls } from '@/lib/konter'
 
+const BRAND_OPTIONS = ['Samsung', 'Xiaomi', 'Oppo', 'Vivo', 'Infinix/Itel/Tecno']
+const INVENTORY_CATEGORIES = ['Sparepart', 'Aksesoris']
+
 const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'service', label: 'Service', icon: Wrench },
@@ -367,7 +370,15 @@ function NewServiceDialog({ token, open, onOpenChange, onCreated }) {
 
           <SectionLabel>Data Perangkat</SectionLabel>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>Merek *</Label><Input value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} placeholder="Samsung" /></div>
+            <div className="space-y-1.5">
+              <Label>Merek *</Label>
+              <Select value={f.brand} onValueChange={(value) => setF({ ...f, brand: value })}>
+                <SelectTrigger><SelectValue placeholder="Pilih merek" /></SelectTrigger>
+                <SelectContent>
+                  {BRAND_OPTIONS.map((brand) => <SelectItem key={brand} value={brand}>{brand}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5"><Label>Model/Tipe *</Label><Input value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} placeholder="A52" /></div>
           </div>
           <div className="space-y-1.5"><Label>Keluhan *</Label><Textarea value={f.complaint} onChange={(e) => setF({ ...f, complaint: e.target.value })} placeholder="Layar pecah" rows={2} /></div>
@@ -827,9 +838,25 @@ function InventoryFormDialog({ token, open, onOpenChange, item, onDone }) {
         <div className="space-y-3">
           <div className="space-y-1.5"><Label>Nama *</Label><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Tombol Power Samsung A52" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>Kategori</Label><Input value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} placeholder="Sparepart" /></div>
+            <div className="space-y-1.5">
+              <Label>Kategori</Label>
+              <Select value={f.category} onValueChange={(value) => setF({ ...f, category: value })}>
+                <SelectTrigger><SelectValue placeholder="Pilih kategori" /></SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5"><Label>SKU/Kode</Label><Input value={f.sku} onChange={(e) => setF({ ...f, sku: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Merek</Label><Input value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} placeholder="Samsung" /></div>
+            <div className="space-y-1.5">
+              <Label>Merek</Label>
+              <Select value={f.brand} onValueChange={(value) => setF({ ...f, brand: value })}>
+                <SelectTrigger><SelectValue placeholder="Pilih merek" /></SelectTrigger>
+                <SelectContent>
+                  {BRAND_OPTIONS.map((brand) => <SelectItem key={brand} value={brand}>{brand}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5"><Label>Model/Kompatibilitas</Label><Input value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} placeholder="A52" /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
