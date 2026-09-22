@@ -196,7 +196,7 @@ function Dashboard({ token, go }) {
 // ---------------- Item Search (dropdown dengan pencarian, ramah HP) ----------------
 function ItemSearch({ items, onPick, placeholder = 'Cari barang...', renderMeta, emptyText = 'Barang tidak ditemukan.', autoFocus = false, limit = 40 }) {
   const [q, setQ] = useState('')
-  const [open, setOpen] = useState(!!initial?.new)
+  const [open, setOpen] = useState(false)
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     const list = !s ? items : items.filter((x) => [x.name, x.sku, x.category, x.brand, x.model, x.location].filter(Boolean).some((v) => String(v).toLowerCase().includes(s)))
@@ -990,7 +990,7 @@ function MovementSheet({ token, item, onOpenChange }) {
 function SaleList({ token, onPrint, initial }) {
   const [sales, setSales] = useState([])
   const [loading, setLoading] = useState(true)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!initial?.new)
   const load = useCallback(async () => {
     setLoading(true)
     try { setSales(await api('/sales', { token })) } catch { toast.error('Gagal memuat penjualan.') } finally { setLoading(false) }
