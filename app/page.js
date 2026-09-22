@@ -440,6 +440,7 @@ function ServiceDetail({ token, id, go, onPrint }) {
   const [openItem, setOpenItem] = useState(false)
   const [openHandover, setOpenHandover] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [confirmStatus, setConfirmStatus] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -453,6 +454,19 @@ function ServiceDetail({ token, id, go, onPrint }) {
   const update = async (body, msg) => {
     try { const d = await api(`/services/${id}`, { method: 'PUT', token, body }); setS(d); if (msg) toast.success(msg) }
     catch (err) { toast.error(err.message) }
+  }
+
+  const askStatusChange = (value) => {
+    if (!value || value === s?.status) return
+    if (value === 'BATAL') { setConfirmCancel(true); return }
+    setConfirmStatus({ value, label: statusLabel(value) })
+  }
+
+  const confirmStatusChange = async () => {
+    if (!confirmStatus) return
+    const next = confirmStatus
+    setConfirmStatus(null)
+    await update({ status: next.value }, `Status diubah menjadi ${next.label}.`)
   }
 
   const removeItem = async (itemId) => {
@@ -483,24 +497,21 @@ function ServiceDetail({ token, id, go, onPrint }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {!['DALAM_PERBAIKAN', 'SELESAI', 'SUDAH_DIAMBIL', 'BATAL'].includes(s.status) && (
-            <Button size="sm" onClick={() => update({ status: 'DALAM_PERBAIKAN' }, 'Perbaikan dimulai.')}>
+            <Button size="sm" onClick={() => askStatusChange('DALAM_PERBAIKAN')}>
               <Wrench className="h-4 w-4 mr-1" /> Mulai Perbaikan
             </Button>
           )}
           {s.status === 'DALAM_PERBAIKAN' && (
-            <Button size="sm" onClick={() => update({ status: 'SELESAI' }, 'Service selesai.')}>
+            <Button size="sm" onClick={() => askStatusChange('SELESAI')}>
               <CheckCircle2 className="h-4 w-4 mr-1" /> Tandai Selesai
             </Button>
           )}
-          {s.status === 'SELESAI' && (
-            <Button size="sm" onClick={() => setOpenHandover(true)}>
-              <PackageCheck className="h-4 w-4 mr-1" /> Serahkan HP
-            </Button>
-          )}
           {s.status !== 'SUDAH_DIAMBIL' && (
-            <Select key={s.status} onValueChange={(v) => v === 'BATAL' ? setConfirmCancel(true) : update({ status: v }, 'Status diperbarui.')}>
+            <Select key={s.status} onValueChange={askStatusChange}>
               <SelectTrigger className="w-44 h-9"><SelectValue placeholder="Status Lainnya" /></SelectTrigger>
-              <SelectContent>{STATUSES.map((x) => <SelectItem key={x.value} value={x.value}>{x.label}</SelectItem>)}</SelectContent>
+              <SelectContent>
+                {STATUSES.filter((x) => x.value !== s.status).map((x) => <SelectItem key={x.value} value={x.value}>{x.label}</SelectItem>)}
+              </SelectContent>
             </Select>
           )}
         </div>
@@ -595,6 +606,12 @@ function ServiceDetail({ token, id, go, onPrint }) {
         </Card>
       </div>
 
+      {s.status === 'SELESAI' && (
+        <Button className="w-full" size="lg" onClick={() => setOpenHandover(true)}>
+          <PackageCheck className="h-5 w-5 mr-2" /> Serahkan HP ke Pelanggan
+        </Button>
+      )}
+
       {s.status === 'SUDAH_DIAMBIL' && s.handover && (
         <Card className="bg-slate-50"><CardContent className="p-3 text-sm">
           <div className="font-medium flex items-center gap-2 text-green-700"><CheckCircle2 className="h-4 w-4" /> HP sudah diambil</div>
@@ -606,6 +623,21 @@ function ServiceDetail({ token, id, go, onPrint }) {
       <AddItemDialog token={token} serviceId={id} open={openItem} onOpenChange={setOpenItem} onDone={(d) => { setS(d); setOpenItem(false) }} />
       <HandoverDialog token={token} service={s} open={openHandover} onOpenChange={setOpenHandover} onDone={(d) => { setS(d); setOpenHandover(false) }} />
 
+      <AlertDialog open={!!confirmStatus} onOpenChange={(open) => !open && setConfirmStatus(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ganti status service?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ubah status dari <b>{statusLabel(s.status)}</b> menjadi <b>{confirmStatus?.label}</b>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmStatus(null)}>Tidak</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmStatusChange}>Ya</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Batalkan service ini?</AlertDialogTitle>
@@ -613,7 +645,7 @@ function ServiceDetail({ token, id, go, onPrint }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Tidak</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { update({ status: 'BATAL' }, 'Service dibatalkan.'); setConfirmCancel(false) }}>Ya, Batalkan</AlertDialogAction>
+            <AlertDialogAction onClick={() => { update({ status: 'BATAL' }, 'Service dibatalkan.'); setConfirmCancel(false) }}>Ya</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
