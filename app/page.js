@@ -1623,6 +1623,54 @@ function PrintDialog({ target, token, onClose, onBrowserPrint }) {
   )
 }
 
+// ---------------- Global API mutation loading ----------------
+function GlobalApiLoading() {
+  const [pending, setPending] = useState(0)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const onActivity = (event) => {
+      if (event.detail?.type === 'start') setPending((n) => n + 1)
+      if (event.detail?.type === 'end') setPending((n) => Math.max(0, n - 1))
+    }
+    window.addEventListener('konter:api-activity', onActivity)
+    return () => window.removeEventListener('konter:api-activity', onActivity)
+  }, [])
+
+  useEffect(() => {
+    let timer
+    if (pending > 0) {
+      timer = setTimeout(() => setVisible(true), 120)
+    } else {
+      setVisible(false)
+    }
+    return () => clearTimeout(timer)
+  }, [pending])
+
+  if (!visible) return null
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-[1px]" aria-live="polite" aria-busy="true">
+      <div className="mx-4 flex min-w-[210px] items-center gap-3 rounded-2xl border bg-background/95 px-5 py-4 shadow-2xl">
+        <div className="relative h-10 w-10 shrink-0">
+          <div className="absolute inset-0 rounded-full border-4 border-muted" />
+          <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-sky-500 border-r-sky-500" />
+          <div className="absolute inset-[11px] animate-pulse rounded-full bg-sky-500/20" />
+        </div>
+        <div className="min-w-0">
+          <div className="font-semibold leading-tight">Memproses...</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">Mohon tunggu sebentar</div>
+          <div className="mt-2 flex gap-1">
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-500 [animation-delay:-0.3s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-500 [animation-delay:-0.15s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-500" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ---------------- Root App ----------------
 function App() {
   const [token, setToken] = useState(null)
@@ -1681,6 +1729,7 @@ function App() {
         ? <SaleReceipt sale={printService.data} settings={settings} width={printWidth} />
         : <Receipt service={printService.data} settings={settings} width={printWidth} />)}
       <PrintDialog target={printAsk} token={token} onClose={() => setPrintAsk(null)} onBrowserPrint={doBrowserPrint} />
+      <GlobalApiLoading />
       <Toaster richColors position="top-center" />
     </>
   )
