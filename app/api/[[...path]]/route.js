@@ -442,12 +442,11 @@ async function handleRoute(request, { params }) {
 
     // ESC/POS bytes untuk printer thermal Bluetooth (nota service)
     if (path[0] === 'services' && path[1] && path[2] === 'escpos' && method === 'GET') {
-      const url = new URL(request.url)
-      const width = url.searchParams.get('width') === '80' ? '80' : '58'
+      const width = '58'
       const s = await db.collection('services').findOne({ id: path[1] })
       if (!s) return json({ error: 'Data tidak ditemukan.' }, 404)
       const settings = (await db.collection('settings').findOne({ id: 'main' })) || {}
-      const bytes = buildServiceReceipt(s, settings, width)
+      const bytes = buildServiceReceipt(s, settings)
       return json({ width, length: bytes.length, base64: toBase64(bytes), preview: bytesToPreview(bytes) })
     }
 
@@ -561,12 +560,11 @@ async function handleRoute(request, { params }) {
       return json(sales.map(clean))
     }
     if (path[0] === 'sales' && path[1] && path[2] === 'escpos' && method === 'GET') {
-      const url = new URL(request.url)
-      const width = url.searchParams.get('width') === '80' ? '80' : '58'
+      const width = '58'
       const s = await db.collection('sales').findOne({ id: path[1] })
       if (!s) return json({ error: 'Data tidak ditemukan.' }, 404)
       const settings = (await db.collection('settings').findOne({ id: 'main' })) || {}
-      const bytes = buildSaleReceipt(s, settings, width)
+      const bytes = buildSaleReceipt(s, settings)
       return json({ width, length: bytes.length, base64: toBase64(bytes), preview: bytesToPreview(bytes) })
     }
     if (route === '/sales' && method === 'POST') {
