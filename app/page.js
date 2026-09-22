@@ -140,24 +140,20 @@ function Dashboard({ token, go }) {
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Dashboard</h1>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted-foreground">Service</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard icon={Wrench} label="Service Aktif" value={data.service.active} tone="primary" onClick={() => go('service')} />
-          <StatCard icon={Clock} label="Menunggu Diperiksa" value={data.service.waiting} />
-          <StatCard icon={Wrench} label="Dalam Perbaikan" value={data.service.repairing} />
-          <StatCard icon={PackageCheck} label="Belum Diambil" value={data.service.unclaimed} tone="warn" onClick={() => go('service', { unclaimed: true })} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard icon={Wrench} label="Service Hari Ini" value={data.service.today} tone="success" />
-          <StatCard icon={Smartphone} label="HP Belum Diambil" value={data.service.unclaimed} tone="warn" />
-        </div>
-      </section>
+      <div className="grid grid-cols-2 gap-3">
+        <Button className="h-12" onClick={() => go('service', { new: true })}>
+          <Plus className="h-4 w-4 mr-2" /> Service Baru
+        </Button>
+        <Button className="h-12" variant="outline" onClick={() => go('sale', { new: true })}>
+          <ShoppingCart className="h-4 w-4 mr-2" /> Penjualan
+        </Button>
+      </div>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted-foreground">Inventory</h2>
-        <div className="grid grid-cols-3 gap-3">
-          <StatCard icon={Boxes} label="Total Item" value={data.inventory.total} onClick={() => go('inventory')} />
+        <h2 className="text-sm font-semibold text-muted-foreground">Ringkasan</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard icon={Wrench} label="Service Aktif" value={data.service.active} tone="primary" onClick={() => go('service')} />
+          <StatCard icon={PackageCheck} label="Belum Diambil" value={data.service.unclaimed} tone="warn" onClick={() => go('service', { unclaimed: true })} />
           <StatCard icon={AlertTriangle} label="Stok Menipis" value={data.inventory.low} tone="warn" onClick={() => go('inventory', { status: 'low' })} />
           <StatCard icon={PackageX} label="Stok Habis" value={data.inventory.out} tone="danger" onClick={() => go('inventory', { status: 'out' })} />
         </div>
@@ -165,7 +161,7 @@ function Dashboard({ token, go }) {
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-muted-foreground">Pendapatan Hari Ini</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <StatCard icon={TrendingUp} label="Total Pendapatan" value={rupiah(data.revenue?.todayTotal || 0)} tone="primary" />
           <StatCard icon={Wrench} label="Dari Service" value={rupiah(data.revenue?.todayService || 0)} sub={`${data.revenue?.todayServiceCount || 0} HP diambil`} tone="success" />
           <StatCard icon={ShoppingCart} label="Dari Penjualan" value={rupiah(data.sales.todayTotal)} sub={`${data.sales.todayCount} transaksi`} tone="success" onClick={() => go('sale')} />
@@ -200,7 +196,7 @@ function Dashboard({ token, go }) {
 // ---------------- Item Search (dropdown dengan pencarian, ramah HP) ----------------
 function ItemSearch({ items, onPick, placeholder = 'Cari barang...', renderMeta, emptyText = 'Barang tidak ditemukan.', autoFocus = false, limit = 40 }) {
   const [q, setQ] = useState('')
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!initial?.new)
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     const list = !s ? items : items.filter((x) => [x.name, x.sku, x.category, x.brand, x.model, x.location].filter(Boolean).some((v) => String(v).toLowerCase().includes(s)))
@@ -247,7 +243,7 @@ function ServiceList({ token, go, initial }) {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState(initial?.unclaimed ? 'UNCLAIMED' : 'ALL')
-  const [openNew, setOpenNew] = useState(false)
+  const [openNew, setOpenNew] = useState(!!initial?.new)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -323,8 +319,9 @@ function NewServiceDialog({ token, open, onOpenChange, onCreated }) {
   }
   const [f, setF] = useState(empty)
   const [saving, setSaving] = useState(false)
+  const [showExtra, setShowExtra] = useState(false)
 
-  useEffect(() => { if (open) setF(empty) }, [open])
+  useEffect(() => { if (open) { setF(empty); setShowExtra(false) } }, [open])
 
   const setCond = (k, v) => setF((p) => ({ ...p, condition: { ...p.condition, [k]: v } }))
 
@@ -383,24 +380,40 @@ function NewServiceDialog({ token, open, onOpenChange, onCreated }) {
           </div>
           <div className="space-y-1.5"><Label>Keluhan *</Label><Textarea value={f.complaint} onChange={(e) => setF({ ...f, complaint: e.target.value })} placeholder="Layar pecah" rows={2} /></div>
 
-          <SectionLabel>Kondisi Saat Diterima</SectionLabel>
-          <div className="grid grid-cols-1 gap-3">
-            <CondRow label="SIM Card"><ToggleField value={f.condition.simCard} onChange={(v) => setCond('simCard', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
-            <CondRow label="SD Card"><ToggleField value={f.condition.sdCard} onChange={(v) => setCond('sdCard', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
-            <CondRow label="Silikon/Casing"><ToggleField value={f.condition.casing} onChange={(v) => setCond('casing', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
-            <CondRow label="Tombol Power"><ToggleField value={f.condition.powerButton} onChange={(v) => setCond('powerButton', v)} options={['Normal', 'Rusak']} /></CondRow>
-            <CondRow label="Volume Up"><ToggleField value={f.condition.volumeUp} onChange={(v) => setCond('volumeUp', v)} options={['Normal', 'Rusak']} /></CondRow>
-            <CondRow label="Volume Down"><ToggleField value={f.condition.volumeDown} onChange={(v) => setCond('volumeDown', v)} options={['Normal', 'Rusak']} /></CondRow>
-          </div>
-          <div className="space-y-1.5"><Label>Catatan Tambahan</Label><Textarea value={f.condition.note} onChange={(e) => setCond('note', e.target.value)} placeholder="LCD retak bagian kanan / barang lain yang ditinggalkan" rows={2} /></div>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => setShowExtra((v) => !v)}
+          >
+            {showExtra ? 'Sembunyikan Kondisi Tambahan' : 'Kondisi Tambahan (opsional)'}
+          </Button>
 
-          <SectionLabel>Diantar Oleh</SectionLabel>
-          <div className="flex items-center gap-3">
-            <ToggleField value={f.deliveredBy.type === 'owner' ? 'Pemilik' : 'Orang Lain'} onChange={(v) => setF({ ...f, deliveredBy: { ...f.deliveredBy, type: v === 'Pemilik' ? 'owner' : 'other' } })} options={['Pemilik', 'Orang Lain']} />
-            {f.deliveredBy.type === 'other' && (
-              <Input className="flex-1" value={f.deliveredBy.name} onChange={(e) => setF({ ...f, deliveredBy: { ...f.deliveredBy, name: e.target.value } })} placeholder="Nama pengantar" />
-            )}
-          </div>
+          {showExtra && (
+            <div className="space-y-4 rounded-lg border p-3 bg-muted/20">
+              <SectionLabel>Kondisi Saat Diterima</SectionLabel>
+              <div className="grid grid-cols-1 gap-3">
+                <CondRow label="SIM Card"><ToggleField value={f.condition.simCard} onChange={(v) => setCond('simCard', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
+                <CondRow label="SD Card"><ToggleField value={f.condition.sdCard} onChange={(v) => setCond('sdCard', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
+                <CondRow label="Silikon/Casing"><ToggleField value={f.condition.casing} onChange={(v) => setCond('casing', v)} options={['Ada', 'Tidak Ada']} /></CondRow>
+                <CondRow label="Tombol Power"><ToggleField value={f.condition.powerButton} onChange={(v) => setCond('powerButton', v)} options={['Normal', 'Rusak']} /></CondRow>
+                <CondRow label="Volume Up"><ToggleField value={f.condition.volumeUp} onChange={(v) => setCond('volumeUp', v)} options={['Normal', 'Rusak']} /></CondRow>
+                <CondRow label="Volume Down"><ToggleField value={f.condition.volumeDown} onChange={(v) => setCond('volumeDown', v)} options={['Normal', 'Rusak']} /></CondRow>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Catatan Tambahan</Label>
+                <Textarea value={f.condition.note} onChange={(e) => setCond('note', e.target.value)} placeholder="LCD retak bagian kanan / barang lain yang ditinggalkan" rows={2} />
+              </div>
+
+              <SectionLabel>Diantar Oleh</SectionLabel>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <ToggleField value={f.deliveredBy.type === 'owner' ? 'Pemilik' : 'Orang Lain'} onChange={(v) => setF({ ...f, deliveredBy: { ...f.deliveredBy, type: v === 'Pemilik' ? 'owner' : 'other' } })} options={['Pemilik', 'Orang Lain']} />
+                {f.deliveredBy.type === 'other' && (
+                  <Input className="flex-1" value={f.deliveredBy.name} onChange={(e) => setF({ ...f, deliveredBy: { ...f.deliveredBy, name: e.target.value } })} placeholder="Nama pengantar" />
+                )}
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Batal</Button>
@@ -464,12 +477,33 @@ function ServiceDetail({ token, id, go, onPrint }) {
         <Button variant="outline" size="sm" onClick={() => onPrint(s)}><Printer className="h-4 w-4 mr-1" /> Nota</Button>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Badge variant="outline" className={statusCls(s.status)}>{statusLabel(s.status)}</Badge>
-        <Select value={s.status} onValueChange={(v) => v === 'BATAL' ? setConfirmCancel(true) : update({ status: v }, 'Status diperbarui.')}>
-          <SelectTrigger className="w-52 h-8"><SelectValue /></SelectTrigger>
-          <SelectContent>{STATUSES.map((x) => <SelectItem key={x.value} value={x.value}>{x.label}</SelectItem>)}</SelectContent>
-        </Select>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className={statusCls(s.status)}>{statusLabel(s.status)}</Badge>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {!['DALAM_PERBAIKAN', 'SELESAI', 'SUDAH_DIAMBIL', 'BATAL'].includes(s.status) && (
+            <Button size="sm" onClick={() => update({ status: 'DALAM_PERBAIKAN' }, 'Perbaikan dimulai.')}>
+              <Wrench className="h-4 w-4 mr-1" /> Mulai Perbaikan
+            </Button>
+          )}
+          {s.status === 'DALAM_PERBAIKAN' && (
+            <Button size="sm" onClick={() => update({ status: 'SELESAI' }, 'Service selesai.')}>
+              <CheckCircle2 className="h-4 w-4 mr-1" /> Tandai Selesai
+            </Button>
+          )}
+          {s.status === 'SELESAI' && (
+            <Button size="sm" onClick={() => setOpenHandover(true)}>
+              <PackageCheck className="h-4 w-4 mr-1" /> Serahkan HP
+            </Button>
+          )}
+          {s.status !== 'SUDAH_DIAMBIL' && (
+            <Select key={s.status} onValueChange={(v) => v === 'BATAL' ? setConfirmCancel(true) : update({ status: v }, 'Status diperbarui.')}>
+              <SelectTrigger className="w-44 h-9"><SelectValue placeholder="Status Lainnya" /></SelectTrigger>
+              <SelectContent>{STATUSES.map((x) => <SelectItem key={x.value} value={x.value}>{x.label}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -561,9 +595,6 @@ function ServiceDetail({ token, id, go, onPrint }) {
         </Card>
       </div>
 
-      {(s.status === 'SELESAI') && (
-        <Button className="w-full" size="lg" onClick={() => setOpenHandover(true)}><PackageCheck className="h-5 w-5 mr-2" /> Serahkan HP ke Pelanggan</Button>
-      )}
       {s.status === 'SUDAH_DIAMBIL' && s.handover && (
         <Card className="bg-slate-50"><CardContent className="p-3 text-sm">
           <div className="font-medium flex items-center gap-2 text-green-700"><CheckCircle2 className="h-4 w-4" /> HP sudah diambil</div>
@@ -956,7 +987,7 @@ function MovementSheet({ token, item, onOpenChange }) {
 }
 
 // ---------------- Sales ----------------
-function SaleList({ token, onPrint }) {
+function SaleList({ token, onPrint, initial }) {
   const [sales, setSales] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
@@ -1617,7 +1648,7 @@ function App() {
   else if (tab === 'service') content = <ServiceList token={token} go={go} initial={params} />
   else if (tab === 'service-detail') content = <ServiceDetail token={token} id={params.id} go={go} onPrint={askPrint} />
   else if (tab === 'inventory') content = <InventoryList token={token} initial={params} />
-  else if (tab === 'sale') content = <SaleList token={token} onPrint={askPrintSale} />
+  else if (tab === 'sale') content = <SaleList token={token} onPrint={askPrintSale} initial={params} />
   else if (tab === 'customer') content = <CustomerList token={token} go={go} />
   else if (tab === 'customer-detail') content = <CustomerDetail token={token} id={params.id} go={go} />
   else if (tab === 'report') content = <Reports token={token} />
