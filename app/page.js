@@ -1707,7 +1707,7 @@ function App() {
   const doBrowserPrint = (w) => { const t = printAsk; setPrintWidth(w); setPrintAsk(null); setPrintService(t); setTimeout(() => window.print(), 300) }
 
   if (!ready) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
-  if (!token) return (<><LoginScreen onLogin={onLogin} /><Toaster richColors position="top-center" /></>)
+  if (!token) return (<><LoginScreen onLogin={onLogin} /><GlobalApiLoading /><Toaster richColors position="top-center" /></>)
 
   let content = null
   const { tab, params } = nav
